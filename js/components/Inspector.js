@@ -99,6 +99,14 @@ export class Inspector {
 
             <div class="panel-section">
                 <h3 class="section-title">🌐 Вид 3D (Минковский)</h3>
+
+                <div class="control-checkbox-row" style="background: rgba(56, 189, 248, 0.08); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.25); margin-bottom: 12px;">
+                    <label style="cursor: pointer; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="chk-hard-cut" ${this.state.settings.hardCutMode ? 'checked' : ''}>
+                        Чистый срез (скрыть конус, кадры 100% / 0%)
+                    </label>
+                </div>
+
                 <div class="control-row">
                     <label>Слои времени (кадры):</label>
                     <div class="slider-val-group">
@@ -177,6 +185,7 @@ export class Inspector {
             propH: this.container.querySelector('#prop-shape-h'),
             btnDeleteShape: this.container.querySelector('#btn-delete-shape'),
 
+            chkHardCut: this.container.querySelector('#chk-hard-cut'),
             sliderLayersCount: this.container.querySelector('#slider-layers-count'),
             valLayersCount: this.container.querySelector('#val-layers-count'),
             sliderConeOpacity: this.container.querySelector('#slider-cone-opacity'),
@@ -324,6 +333,10 @@ export class Inspector {
             this.state.updateSetting('layerOpacityOutside', val);
         });
 
+        this.dom.chkHardCut.addEventListener('change', (e) => {
+            this.state.updateSetting('hardCutMode', e.target.checked);
+        });
+
         this.dom.chkWorldTubes.addEventListener('change', (e) => {
             this.state.updateSetting('showWorldTubes', e.target.checked);
         });
@@ -356,6 +369,9 @@ export class Inspector {
             this.dom.sliderConeAngle.value = this.state.settings.coneAngle;
             this.dom.valConeAngle.textContent = `${this.state.settings.coneAngle}°`;
             this.dom.valC.textContent = `${this.state.speedOfLight.toFixed(1)} px/s`;
+            if (this.dom.chkHardCut) {
+                this.dom.chkHardCut.checked = !!this.state.settings.hardCutMode;
+            }
             this.updateShapeProps();
         });
     }

@@ -42,6 +42,7 @@ export class AppState {
             showLayers: true,           // Отображать срезы времени
             showWorldTubes: true,       // Отображать сплошные мировые трубки в 3D
             showLightCone: true,        // Отображать 3D световой конус
+            hardCutMode: false,         // Режим жесткого среза: конус скрыт, внутри 100%, снаружи 0%
             view2DMode: 'both',         // 'retarded', 'instant', 'both'
             showMeasurement: true,      // Измерение кажущейся длины стержня
             coneResolution: 48          // Детализация конуса

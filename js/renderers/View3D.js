@@ -32,6 +32,7 @@ varying vec2 vWorldXZ;
 
 void main() {
     if (uIsFuture > 0.5) {
+        if (uOpacityOutside <= 0.001) discard;
         gl_FragColor = vec4(uColorOutside, uOpacityOutside);
         return;
     }
@@ -39,14 +40,20 @@ void main() {
     float dist = distance(vWorldXZ, uApexXZ);
 
     if (dist <= uConeRadius) {
-        // Внутри светового конуса: яркий кадр с высокой непрозрачностью
-        // Неоновое кольцо на границе среза светового конуса
-        float ring = smoothstep(3.5, 0.0, abs(dist - uConeRadius));
-        vec3 col = mix(uColorInside, vec3(0.15, 0.95, 1.0), ring * 0.85);
-        float alpha = mix(uOpacityInside, min(1.0, uOpacityInside + 0.35), ring);
-        gl_FragColor = vec4(col, alpha);
+        // Внутри светового конуса:
+        if (uOpacityInside >= 0.99) {
+            // Режим жесткого среза: 100% непрозрачный цвет кадра
+            gl_FragColor = vec4(uColorInside, 1.0);
+        } else {
+            // Полупрозрачный режим с неоновым кольцом
+            float ring = smoothstep(3.5, 0.0, abs(dist - uConeRadius));
+            vec3 col = mix(uColorInside, vec3(0.15, 0.95, 1.0), ring * 0.85);
+            float alpha = mix(uOpacityInside, min(1.0, uOpacityInside + 0.35), ring);
+            gl_FragColor = vec4(col, alpha);
+        }
     } else {
-        // Снаружи светового конуса: повышенная прозрачность
+        // Снаружи светового конуса:
+        if (uOpacityOutside <= 0.001) discard;
         gl_FragColor = vec4(uColorOutside, uOpacityOutside);
     }
 }
@@ -74,18 +81,25 @@ varying vec2 vWorldXZ;
 
 void main() {
     if (uIsFuture > 0.5) {
+        if (uOpacityOutside <= 0.001) discard;
         gl_FragColor = vec4(uBaseColor, uOpacityOutside);
         return;
     }
 
     float dist = distance(vWorldXZ, uApexXZ);
-    float alpha = (dist <= uConeRadius) ? uOpacityInside : uOpacityOutside;
 
-    // Световой блик на границе среза
-    float ring = smoothstep(3.0, 0.0, abs(dist - uConeRadius));
-    vec3 col = mix(uBaseColor, vec3(1.0, 1.0, 1.0), ring * 0.4);
-
-    gl_FragColor = vec4(col, alpha);
+    if (dist <= uConeRadius) {
+        if (uOpacityInside >= 0.99) {
+            gl_FragColor = vec4(uBaseColor, 1.0);
+        } else {
+            float ring = smoothstep(3.0, 0.0, abs(dist - uConeRadius));
+            vec3 col = mix(uBaseColor, vec3(1.0, 1.0, 1.0), ring * 0.4);
+            gl_FragColor = vec4(col, uOpacityInside);
+        }
+    } else {
+        if (uOpacityOutside <= 0.001) discard;
+        gl_FragColor = vec4(uBaseColor, uOpacityOutside);
+    }
 }
 `;
 
@@ -318,6 +332,7 @@ export class View3D {
                 yPos,
                 t,
                 planeUniforms,
+                frameLine,
                 shapeMeshes
             });
         }
@@ -411,8 +426,15 @@ export class View3D {
         const coneAngleDeg = this.state.settings.coneAngle ?? 45;
         const coneSlope = Math.tan(coneAngleDeg * (Math.PI / 180));
 
-        const optInside = this.state.settings.layerOpacityInside ?? 0.65;
-        const optOutside = this.state.settings.layerOpacityOutside ?? 0.05;
+        const hardCut = this.state.settings.hardCutMode;
+
+        // Если включен режим жесткого среза:
+        // Внутри конуса: 100% непрозрачно (1.0)
+        // Снаружи конуса: 0% полностью невидимо (0.0)
+        const optInside = hardCut ? 1.0 : (this.state.settings.layerOpacityInside ?? 0.65);
+        const optOutside = hardCut ? 0.0 : (this.state.settings.layerOpacityOutside ?? 0.05);
+        const shapeOptInside = hardCut ? 1.0 : (this.state.settings.shapeOpacityInside ?? 0.95);
+        const shapeOptOutside = hardCut ? 0.0 : (this.state.settings.shapeOpacityOutside ?? 0.12);
         const coneOpacity = this.state.settings.coneOpacity ?? 0.25;
 
         // 1. Обновляем шейдеры всех слоёв времени
@@ -421,6 +443,11 @@ export class View3D {
             // Глубина времени от вершины вниз до данного слоя
             const deltaY = currentY - layer.yPos;
             const radiusAtLayer = (!isFuture && deltaY >= 0) ? (deltaY * coneSlope) : 0.0;
+
+            // В режиме жесткого среза прямоугольные контуры рамок скрываются
+            if (layer.frameLine) {
+                layer.frameLine.visible = !hardCut;
+            }
 
             // Обновляем униформы плоскости слоя
             layer.planeUniforms.uApexXZ.value.set(obs.x, obs.y);
@@ -433,8 +460,8 @@ export class View3D {
             layer.shapeMeshes.forEach(sm => {
                 sm.uniforms.uApexXZ.value.set(obs.x, obs.y);
                 sm.uniforms.uConeRadius.value = radiusAtLayer;
-                sm.uniforms.uOpacityInside.value = this.state.settings.shapeOpacityInside ?? 0.95;
-                sm.uniforms.uOpacityOutside.value = this.state.settings.shapeOpacityOutside ?? 0.12;
+                sm.uniforms.uOpacityInside.value = shapeOptInside;
+                sm.uniforms.uOpacityOutside.value = shapeOptOutside;
                 sm.uniforms.uIsFuture.value = isFuture ? 1.0 : 0.0;
             });
         });
@@ -467,16 +494,8 @@ export class View3D {
         this.dynamicGroup.add(apexSphere);
 
         // 4. Световой конус прошлого (Past Light Cone)
-        // ВАЖНО:
-        // Вершина конуса находится вверху на высоте currentY.
-        // Основание конуса находится внизу на высоте 0 (t = 0).
-        // В Three.js ConeGeometry вершина находится в (+height/2), основание в (-height/2).
-        // Поэтому без поворота:
-        // Высота coneHeight = currentY
-        // Центр меша: Y = currentY / 2
-        // Тогда вершина (+height/2) будет на: currentY / 2 + currentY / 2 = currentY (ВВЕРХУ!)
-        // Основание (-height/2) будет на: currentY / 2 - currentY / 2 = 0 (ВНИЗУ!)
-        if (this.state.settings.showLightCone && currentY > 1.0) {
+        // В режиме жесткого среза (hardCutMode) конус полностью отключается (становится невидимым)
+        if (this.state.settings.showLightCone && !hardCut && currentY > 1.0) {
             const coneHeight = currentY;
             const baseRadius = coneHeight * coneSlope; // Радиус на плоскости t = 0
 
