@@ -43,6 +43,8 @@ export class AppState {
             showWorldTubes: true,       // Отображать сплошные мировые трубки в 3D
             showLightCone: true,        // Отображать 3D световой конус
             hardCutMode: false,         // Режим жесткого среза: конус скрыт, внутри 100%, снаружи 0%
+            frameBgColor: '#133863',    // Цвет фона кадра (внутри конуса и в 2D виде)
+            bg3DColor: '#070c18',       // Цвет фона 3D сцены
             view2DMode: 'both',         // 'retarded', 'instant', 'both'
             showMeasurement: true,      // Измерение кажущейся длины стержня
             coneResolution: 48          // Детализация конуса
@@ -93,6 +95,26 @@ export class AppState {
         this.speedOfLight = clampedC;
         this.settings.coneAngle = Math.round(this.calculateConeAngle(clampedC));
         this.updateShapesSpeedOfLight();
+        this.emit('settingsChanged', this.settings);
+        this.emit('timeUpdated', this.currentTime);
+    }
+
+    setDuration(d) {
+        const val = parseFloat(d);
+        if (isNaN(val) || val <= 0.1) return;
+        const clamped = Math.max(0.5, Math.min(300, val));
+        this.duration = clamped;
+
+        // Пересчитываем скорость света c для сохранения угла конуса Минковского:
+        // c = (H / T) * tan(angle)
+        this.speedOfLight = this.calculateSpeedOfLight(this.settings.coneAngle);
+        this.updateShapesSpeedOfLight();
+
+        if (this.currentTime > this.duration) {
+            this.currentTime = this.duration;
+        }
+
+        this.emit('durationChanged', this.duration);
         this.emit('settingsChanged', this.settings);
         this.emit('timeUpdated', this.currentTime);
     }

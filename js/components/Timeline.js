@@ -33,7 +33,10 @@ export class Timeline {
                 <div class="timecode-display">
                     <span id="timecode-current">00:00.00</span>
                     <span class="timecode-sep">/</span>
-                    <span id="timecode-duration">00:06.00</span>
+                    <div class="timecode-duration-box" title="Длительность сцены в секундах. Кликните, чтобы изменить вручную">
+                        <input type="number" id="input-duration" class="timecode-duration-input" min="0.5" max="300" step="0.5" value="${this.state.duration.toFixed(2)}">
+                        <span class="timecode-sec-label">s</span>
+                    </div>
                     <span id="frame-counter" class="badge">F: 0</span>
                 </div>
 
@@ -76,7 +79,7 @@ export class Timeline {
             btnAddKeyframe: this.container.querySelector('#btn-add-keyframe'),
             selectSpeed: this.container.querySelector('#select-speed'),
             timeCurrent: this.container.querySelector('#timecode-current'),
-            timeDuration: this.container.querySelector('#timecode-duration'),
+            inputDuration: this.container.querySelector('#input-duration'),
             frameCounter: this.container.querySelector('#frame-counter'),
             trackWrapper: this.container.querySelector('#timeline-track-wrapper'),
             track: this.container.querySelector('#timeline-track'),
@@ -94,16 +97,31 @@ export class Timeline {
         ruler.innerHTML = '';
         const dur = this.state.duration;
 
-        for (let s = 0; s <= dur; s += 0.5) {
+        let step = 0.5;
+        let majorEvery = 1.0;
+        if (dur > 30) {
+            step = 5.0;
+            majorEvery = 10.0;
+        } else if (dur > 15) {
+            step = 1.0;
+            majorEvery = 5.0;
+        } else if (dur > 6) {
+            step = 1.0;
+            majorEvery = 2.0;
+        }
+
+        for (let s = 0; s <= dur + 0.0001; s += step) {
             const pct = (s / dur) * 100;
+            if (pct > 100.001) break;
             const tick = document.createElement('div');
-            tick.className = s % 1 === 0 ? 'ruler-tick major' : 'ruler-tick minor';
+            const isMajor = Math.abs(s % majorEvery) < 0.001 || Math.abs((s % majorEvery) - majorEvery) < 0.001;
+            tick.className = isMajor ? 'ruler-tick major' : 'ruler-tick minor';
             tick.style.left = `${pct}%`;
 
-            if (s % 1 === 0) {
+            if (isMajor) {
                 const label = document.createElement('span');
                 label.className = 'ruler-label';
-                label.textContent = `${s}s`;
+                label.textContent = `${Math.round(s * 10) / 10}s`;
                 tick.appendChild(label);
             }
             ruler.appendChild(tick);
@@ -115,6 +133,24 @@ export class Timeline {
         this.dom.btnPlay.addEventListener('click', () => this.state.togglePlay());
         this.dom.btnPrev.addEventListener('click', () => this.state.stepFrame(-1));
         this.dom.btnNext.addEventListener('click', () => this.state.stepFrame(1));
+
+        // Ввод длительности сцены вручную
+        const applyDuration = () => {
+            const val = parseFloat(this.dom.inputDuration.value);
+            if (!isNaN(val) && val > 0.1) {
+                this.state.setDuration(val);
+            } else {
+                this.dom.inputDuration.value = this.state.duration.toFixed(2);
+            }
+        };
+
+        this.dom.inputDuration.addEventListener('change', applyDuration);
+        this.dom.inputDuration.addEventListener('blur', applyDuration);
+        this.dom.inputDuration.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.dom.inputDuration.blur();
+            }
+        });
 
         this.dom.selectSpeed.addEventListener('change', (e) => {
             this.state.playbackSpeed = parseFloat(e.target.value);
@@ -168,6 +204,11 @@ export class Timeline {
 
         // Реакция на состояние
         this.state.on('timeUpdated', () => this.updateUI());
+        this.state.on('durationChanged', () => {
+            this.buildRuler();
+            this.updateKeyframes();
+            this.updateUI();
+        });
         this.state.on('playStateChanged', (isPlaying) => this.updatePlayIcon(isPlaying));
         this.state.on('shapeSelected', () => this.updateKeyframes());
         this.state.on('shapesUpdated', () => this.updateKeyframes());
@@ -176,7 +217,7 @@ export class Timeline {
     updateUI() {
         const t = this.state.currentTime;
         const dur = this.state.duration;
-        const pct = (t / dur) * 100;
+        const pct = dur > 0 ? (t / dur) * 100 : 0;
 
         this.dom.playhead.style.left = `${pct}%`;
         this.dom.progress.style.width = `${pct}%`;
@@ -186,9 +227,9 @@ export class Timeline {
         const secs = (t % 60).toFixed(2).padStart(5, '0');
         this.dom.timeCurrent.textContent = `${String(mins).padStart(2, '0')}:${secs}`;
 
-        const durMins = Math.floor(dur / 60);
-        const durSecs = (dur % 60).toFixed(2).padStart(5, '0');
-        this.dom.timeDuration.textContent = `${String(durMins).padStart(2, '0')}:${durSecs}`;
+        if (this.dom.inputDuration && document.activeElement !== this.dom.inputDuration) {
+            this.dom.inputDuration.value = dur.toFixed(2);
+        }
 
         const frame = Math.round(t * this.state.fps);
         this.dom.frameCounter.textContent = `F: ${frame}`;

@@ -122,7 +122,8 @@ export class View3D {
 
     initScene() {
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x070c18);
+        const bg3D = this.state.settings.bg3DColor || '#070c18';
+        this.scene.background = new THREE.Color(bg3D);
 
         const width = this.container.clientWidth || 800;
         const height = this.container.clientHeight || 600;
@@ -205,6 +206,10 @@ export class View3D {
     bindEvents() {
         this.state.on('timeUpdated', () => this.updateScene());
         this.state.on('shapesUpdated', () => this.rebuildGeometry());
+        this.state.on('durationChanged', () => {
+            this.rebuildGeometry();
+            this.updateScene();
+        });
         this.state.on('settingsChanged', () => {
             this.rebuildGeometry();
             this.updateScene();
@@ -254,6 +259,7 @@ export class View3D {
         const count = this.state.settings.layersCount;
         const optInside = this.state.settings.layerOpacityInside ?? 0.65;
         const optOutside = this.state.settings.layerOpacityOutside ?? 0.05;
+        const frameColor = new THREE.Color(this.state.settings.frameBgColor || '#133863');
 
         for (let i = 0; i < count; i++) {
             const t = (i / (count - 1)) * this.state.duration;
@@ -265,7 +271,7 @@ export class View3D {
                 uConeRadius: { value: 0.0 },
                 uOpacityInside: { value: optInside },
                 uOpacityOutside: { value: optOutside },
-                uColorInside: { value: new THREE.Color(0x133863) }, // Синий оттенок внутри конуса
+                uColorInside: { value: frameColor.clone() }, // Цвет фона кадра
                 uColorOutside: { value: new THREE.Color(0x0e172a) }, // Тёмный снаружи
                 uIsFuture: { value: 0.0 }
             };
@@ -437,6 +443,13 @@ export class View3D {
         const shapeOptOutside = hardCut ? 0.0 : (this.state.settings.shapeOpacityOutside ?? 0.12);
         const coneOpacity = this.state.settings.coneOpacity ?? 0.25;
 
+        // Обновляем фон 3D сцены
+        if (this.scene && this.state.settings.bg3DColor) {
+            this.scene.background.set(this.state.settings.bg3DColor);
+        }
+
+        const frameColor = new THREE.Color(this.state.settings.frameBgColor || '#133863');
+
         // 1. Обновляем шейдеры всех слоёв времени
         this.layersData.forEach(layer => {
             const isFuture = layer.yPos > currentY;
@@ -454,6 +467,7 @@ export class View3D {
             layer.planeUniforms.uConeRadius.value = radiusAtLayer;
             layer.planeUniforms.uOpacityInside.value = optInside;
             layer.planeUniforms.uOpacityOutside.value = optOutside;
+            layer.planeUniforms.uColorInside.value.copy(frameColor);
             layer.planeUniforms.uIsFuture.value = isFuture ? 1.0 : 0.0;
 
             // Обновляем униформы фигур на этом слое

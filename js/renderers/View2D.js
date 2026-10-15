@@ -30,6 +30,7 @@ export class View2D {
         this.state.on('timeUpdated', () => this.render());
         this.state.on('shapesUpdated', () => this.render());
         this.state.on('settingsChanged', () => this.render());
+        this.state.on('durationChanged', () => this.render());
         this.state.on('viewModeChanged', () => this.onResize());
 
         window.addEventListener('resize', () => this.onResize());
@@ -66,8 +67,8 @@ export class View2D {
         const w = this.width;
         const h = this.height;
 
-        // 1. Очистка фона
-        ctx.fillStyle = '#0b1329';
+        // 1. Очистка фона (Цвет фона кадра)
+        ctx.fillStyle = this.state.settings.frameBgColor || '#0b1329';
         ctx.fillRect(0, 0, w, h);
 
         // 2. Координатная сетка

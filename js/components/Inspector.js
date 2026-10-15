@@ -107,6 +107,23 @@ export class Inspector {
                     </label>
                 </div>
 
+                <div class="control-row-grid" style="margin-bottom: 12px;">
+                    <div>
+                        <label>Цвет фона кадра:</label>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <input type="color" id="prop-frame-bg" class="input-color-sm" value="${this.state.settings.frameBgColor || '#133863'}">
+                            <span id="val-frame-bg" style="font-size:10px; font-family:var(--font-mono); color:var(--text-muted);">${this.state.settings.frameBgColor || '#133863'}</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label>Цвет фона 3D:</label>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <input type="color" id="prop-3d-bg" class="input-color-sm" value="${this.state.settings.bg3DColor || '#070c18'}">
+                            <span id="val-3d-bg" style="font-size:10px; font-family:var(--font-mono); color:var(--text-muted);">${this.state.settings.bg3DColor || '#070c18'}</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="control-row">
                     <label>Слои времени (кадры):</label>
                     <div class="slider-val-group">
@@ -186,6 +203,10 @@ export class Inspector {
             btnDeleteShape: this.container.querySelector('#btn-delete-shape'),
 
             chkHardCut: this.container.querySelector('#chk-hard-cut'),
+            propFrameBg: this.container.querySelector('#prop-frame-bg'),
+            valFrameBg: this.container.querySelector('#val-frame-bg'),
+            prop3dBg: this.container.querySelector('#prop-3d-bg'),
+            val3dBg: this.container.querySelector('#val-3d-bg'),
             sliderLayersCount: this.container.querySelector('#slider-layers-count'),
             valLayersCount: this.container.querySelector('#val-layers-count'),
             sliderConeOpacity: this.container.querySelector('#slider-cone-opacity'),
@@ -337,6 +358,18 @@ export class Inspector {
             this.state.updateSetting('hardCutMode', e.target.checked);
         });
 
+        this.dom.propFrameBg.addEventListener('input', (e) => {
+            const val = e.target.value;
+            this.dom.valFrameBg.textContent = val;
+            this.state.updateSetting('frameBgColor', val);
+        });
+
+        this.dom.prop3dBg.addEventListener('input', (e) => {
+            const val = e.target.value;
+            this.dom.val3dBg.textContent = val;
+            this.state.updateSetting('bg3DColor', val);
+        });
+
         this.dom.chkWorldTubes.addEventListener('change', (e) => {
             this.state.updateSetting('showWorldTubes', e.target.checked);
         });
@@ -371,6 +404,14 @@ export class Inspector {
             this.dom.valC.textContent = `${this.state.speedOfLight.toFixed(1)} px/s`;
             if (this.dom.chkHardCut) {
                 this.dom.chkHardCut.checked = !!this.state.settings.hardCutMode;
+            }
+            if (this.dom.propFrameBg) {
+                this.dom.propFrameBg.value = this.state.settings.frameBgColor || '#133863';
+                this.dom.valFrameBg.textContent = this.state.settings.frameBgColor || '#133863';
+            }
+            if (this.dom.prop3dBg) {
+                this.dom.prop3dBg.value = this.state.settings.bg3DColor || '#070c18';
+                this.dom.val3dBg.textContent = this.state.settings.bg3DColor || '#070c18';
             }
             this.updateShapeProps();
         });
