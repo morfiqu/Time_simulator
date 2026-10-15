@@ -164,6 +164,7 @@ export class Inspector {
             propVx: this.container.querySelector('#prop-shape-vx'),
             propW: this.container.querySelector('#prop-shape-w'),
             propH: this.container.querySelector('#prop-shape-h'),
+            btnDeleteShape: this.container.querySelector('#btn-delete-shape'),
             sliderLayersCount: this.container.querySelector('#slider-layers-count'),
             valLayersCount: this.container.querySelector('#val-layers-count'),
             sliderConeAngle: this.container.querySelector('#slider-cone-angle'),
