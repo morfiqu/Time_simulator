@@ -286,7 +286,7 @@ export class View3D {
             // Фигуры на данном слое
             const shapeMeshes = [];
             this.state.shapes.forEach(shape => {
-                const s = shape.getStateAt(t);
+                const s = shape.getStateAt(t, this.state.speedOfLight);
                 const shapeGeo = new THREE.PlaneGeometry(s.width, s.height);
                 shapeGeo.rotateX(-Math.PI / 2);
 
@@ -353,7 +353,7 @@ export class View3D {
             for (let step = 0; step <= steps; step++) {
                 const t = step * dt;
                 const yPos = this.timeToY(t);
-                const s = shape.getStateAt(t);
+                const s = shape.getStateAt(t, this.state.speedOfLight);
 
                 corners.forEach(([sx, sz]) => {
                     vertices.push(s.x + sx * s.width, yPos, s.y + sz * s.height);

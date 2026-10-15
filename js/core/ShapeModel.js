@@ -1,6 +1,7 @@
 /**
  * ShapeModel.js
  * Модель объектов симуляции: стержни, сараи, излучатели и ключевые кадры анимации.
+ * Скорость задается в долях от скорости света c: betaX = Vx / c.
  */
 
 export class ShapeModel {
@@ -11,39 +12,74 @@ export class ShapeModel {
         this.color = config.color || '#38bdf8';
         this.fillColor = config.fillColor || (this.color + '44');
 
-        // Базовые параметры движения (линейная модель)
+        // Скорость света для масштабирования скорости
+        this.speedOfLight = config.speedOfLight || 53.333;
+
+        // Базовые параметры движения: скорость задается в долях от скорости света (beta = v / c)
         this.x0 = config.x0 ?? -150;
         this.y0 = config.y0 ?? 0;
-        this.vx = config.vx ?? 60; // px/s
-        this.vy = config.vy ?? 0;
+        this.betaX = config.betaX ?? (config.vx !== undefined ? (config.vx / this.speedOfLight) : 0.75);
+        this.betaY = config.betaY ?? 0;
 
         // Размеры
         this.width = config.width ?? 70;
         this.height = config.height ?? 22;
 
         // Ключевые кадры (для нелинейной анимации в стиле Blender)
-        // Формат: [ { time: 0, x: -150, y: 0, width: 70, height: 22, open: false }, ... ]
         this.keyframes = config.keyframes || null;
 
         // Специфика сарая (двери)
         this.barnDoorThickness = config.barnDoorThickness ?? 4;
         this.doorsOpen = config.doorsOpen ?? true;
-        this.doorsCloseTime = config.doorsCloseTime ?? 2.5; // Время одновременного закрытия дверей
-        this.doorsOpenTime = config.doorsOpenTime ?? 3.5;
+        this.doorsCloseTime = config.doorsCloseTime ?? 2.2;
+        this.doorsOpenTime = config.doorsOpenTime ?? 3.4;
+    }
+
+    setSpeedOfLight(c) {
+        if (c > 0) {
+            this.speedOfLight = c;
+        }
+    }
+
+    setBetaX(beta) {
+        this.betaX = beta;
+    }
+
+    get vx() {
+        return this.betaX * this.speedOfLight;
+    }
+
+    set vx(val) {
+        this.betaX = this.speedOfLight > 0 ? (val / this.speedOfLight) : 0;
+    }
+
+    get vy() {
+        return this.betaY * this.speedOfLight;
+    }
+
+    set vy(val) {
+        this.betaY = this.speedOfLight > 0 ? (val / this.speedOfLight) : 0;
     }
 
     /**
-     * Получение состояния объекта в произвольный момент времени t
+     * Получение состояния объекта в произвольный момент времени t.
+     * Принимает опциональный customC (скорость света), чтобы гарантировать
+     * 100% синхронизацию с 3D-конусом.
      */
-    getStateAt(t) {
+    getStateAt(t, customC = null) {
+        const c = (customC !== null && customC > 0) ? customC : this.speedOfLight;
+
         // Если заданы ключевые кадры, интерполируем между ними
         if (this.keyframes && this.keyframes.length > 0) {
             return this._interpolateKeyframes(t);
         }
 
-        // По умолчанию: линейное движение x(t) = x0 + vx * t
-        const x = this.x0 + this.vx * t;
-        const y = this.y0 + this.vy * t;
+        // Релятивистское движение x(t) = x0 + (beta * c) * t
+        const currentVx = this.betaX * c;
+        const currentVy = this.betaY * c;
+
+        const x = this.x0 + currentVx * t;
+        const y = this.y0 + currentVy * t;
 
         let doorsOpen = true;
         if (this.type === 'barn') {
@@ -55,13 +91,12 @@ export class ShapeModel {
             y,
             width: this.width,
             height: this.height,
-            doorsOpen
+            doorsOpen,
+            vx: currentVx,
+            vy: currentVy
         };
     }
 
-    /**
-     * Линейная интерполяция между ключевыми кадрами
-     */
     _interpolateKeyframes(t) {
         if (this.keyframes.length === 1 || t <= this.keyframes[0].time) {
             return { ...this.keyframes[0] };
@@ -71,7 +106,6 @@ export class ShapeModel {
             return { ...last };
         }
 
-        // Поиск интервала [k1, k2]
         for (let i = 0; i < this.keyframes.length - 1; i++) {
             const k1 = this.keyframes[i];
             const k2 = this.keyframes[i + 1];
@@ -90,9 +124,6 @@ export class ShapeModel {
         return { ...last };
     }
 
-    /**
-     * Добавление / обновление ключевого кадра в момент t
-     */
     setKeyframe(time, params = {}) {
         if (!this.keyframes) {
             this.keyframes = [];
@@ -130,11 +161,10 @@ export const Presets = {
                 id: 'flying_rod',
                 name: 'Летящий стержень',
                 type: 'rod',
-                color: '#38bdf8', // Неоново-голубой
-                x0: -220,
+                color: '#38bdf8',
+                x0: -180,
                 y0: 0,
-                vx: 75, // скорость 75 px/s
-                vy: 0,
+                betaX: 0.75, // Скорость 0.75 от скорости света c
                 width: 70,
                 height: 22
             })
@@ -150,11 +180,10 @@ export const Presets = {
                 id: 'barn',
                 name: 'Неподвижный сарай',
                 type: 'barn',
-                color: '#fbbf24', // Золотисто-янтарный
+                color: '#fbbf24',
                 x0: 0,
                 y0: 0,
-                vx: 0,
-                vy: 0,
+                betaX: 0.0, // Неподвижен
                 width: 110,
                 height: 50,
                 doorsCloseTime: 2.2,
@@ -164,12 +193,11 @@ export const Presets = {
                 id: 'long_pole',
                 name: 'Длинный шест',
                 type: 'rod',
-                color: '#f43f5e', // Неоново-розовый
-                x0: -240,
+                color: '#f43f5e',
+                x0: -220,
                 y0: 0,
-                vx: 85,
-                vy: 0,
-                width: 140, // Заведомо длиннее сарая (140 > 110)
+                betaX: 0.85, // 0.85c
+                width: 140, // Длиннее сарая
                 height: 18
             })
         ];
@@ -185,10 +213,9 @@ export const Presets = {
                 name: 'Стержень слева (синий)',
                 type: 'rod',
                 color: '#38bdf8',
-                x0: -220,
+                x0: -180,
                 y0: -20,
-                vx: 70,
-                vy: 0,
+                betaX: 0.65, // +0.65c
                 width: 60,
                 height: 18
             }),
@@ -197,10 +224,9 @@ export const Presets = {
                 name: 'Стержень справа (красный)',
                 type: 'rod',
                 color: '#f43f5e',
-                x0: 220,
+                x0: 180,
                 y0: 20,
-                vx: -70,
-                vy: 0,
+                betaX: -0.65, // -0.65c навстречу
                 width: 60,
                 height: 18
             })

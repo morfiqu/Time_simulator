@@ -1,6 +1,9 @@
 /**
  * Inspector.js
- * Боковая панель свойств: физика, объекты сцены, слои 3D и параметры проекции 2D.
+ * Боковая панель свойств: физика пространства-времени, объекты сцены,
+ * слои 3D и проекция 2D.
+ * Угол светового конуса жестко определяет скорость света c.
+ * Скорость фигур задается в долях от скорости света (beta = v/c).
  */
 
 import { ShapeModel } from '../core/ShapeModel.js';
@@ -17,16 +20,22 @@ export class Inspector {
     renderDom() {
         this.container.innerHTML = `
             <div class="panel-section">
-                <h3 class="section-title">⚡ Физика времени</h3>
+                <h3 class="section-title">⚡ Физика пространства-времени</h3>
                 <div class="control-row">
-                    <label>Скорость света (c):</label>
+                    <label>Угол светового конуса (задаёт скорость света c):</label>
                     <div class="slider-val-group">
-                        <input type="range" id="slider-c" min="30" max="250" step="5" value="${this.state.speedOfLight}">
-                        <span id="val-c" class="val-badge">${this.state.speedOfLight} px/s</span>
+                        <input type="range" id="slider-cone-angle" min="15" max="75" step="1" value="${this.state.settings.coneAngle}">
+                        <span id="val-cone-angle" class="val-badge">${this.state.settings.coneAngle}°</span>
+                    </div>
+                    <div class="param-subtext" style="margin-top:6px; font-size:11px; color:#94a3b8;">
+                        Скорость света: <strong id="val-c" style="color:#38bdf8;">${this.state.speedOfLight.toFixed(1)} px/s</strong>
+                        <span style="display:block; font-size:10px; color:#64748b; margin-top:2px;">
+                            (3D-конус и 2D-запаздывание жестко синхронизированы 1:1)
+                        </span>
                     </div>
                 </div>
 
-                <div class="control-row">
+                <div class="control-row" style="margin-top:12px;">
                     <label>Позиция наблюдателя X:</label>
                     <input type="range" id="slider-obs-x" min="-180" max="180" step="5" value="${this.state.observer.x}">
                 </div>
@@ -54,26 +63,32 @@ export class Inspector {
                         <input type="color" id="prop-shape-color" class="input-color-sm">
                     </div>
 
-                    <div class="control-row-grid">
+                    <div class="control-row">
+                        <label>Скорость (в долях от скорости света c, β = v/c):</label>
+                        <div class="slider-val-group">
+                            <input type="range" id="slider-shape-beta" min="-1.0" max="1.0" step="0.01" value="0.75">
+                            <span id="val-shape-beta" class="val-badge">0.75 c</span>
+                        </div>
+                        <div style="margin-top:6px;">
+                            <label style="font-size:10px; color:#94a3b8;">Точное значение β (любое число, без ограничений):</label>
+                            <input type="number" id="prop-shape-beta-input" class="input-num-sm" step="0.05" style="width:100%;" placeholder="например 0.1, 0.85 или 1.5">
+                        </div>
+                    </div>
+
+                    <div class="control-row-grid" style="margin-top:10px;">
                         <div>
                             <label>X₀ (старт):</label>
                             <input type="number" id="prop-shape-x0" class="input-num-sm" step="5">
                         </div>
                         <div>
-                            <label>Скорость Vx:</label>
-                            <input type="number" id="prop-shape-vx" class="input-num-sm" step="5">
-                        </div>
-                    </div>
-
-                    <div class="control-row-grid">
-                        <div>
                             <label>Ширина L₀:</label>
                             <input type="number" id="prop-shape-w" class="input-num-sm" min="10" max="300" step="5">
                         </div>
-                        <div>
-                            <label>Высота H:</label>
-                            <input type="number" id="prop-shape-h" class="input-num-sm" min="6" max="100" step="2">
-                        </div>
+                    </div>
+
+                    <div class="control-row">
+                        <label>Высота H:</label>
+                        <input type="number" id="prop-shape-h" class="input-num-sm" min="6" max="100" step="2" style="width:100%;">
                     </div>
 
                     <button id="btn-delete-shape" class="btn btn-xs btn-danger btn-block mt-2">
@@ -89,14 +104,6 @@ export class Inspector {
                     <div class="slider-val-group">
                         <input type="range" id="slider-layers-count" min="12" max="72" step="6" value="${this.state.settings.layersCount}">
                         <span id="val-layers-count" class="val-badge">${this.state.settings.layersCount}</span>
-                    </div>
-                </div>
-
-                <div class="control-row">
-                    <label>Угол конуса:</label>
-                    <div class="slider-val-group">
-                        <input type="range" id="slider-cone-angle" min="25" max="65" step="5" value="${this.state.settings.coneAngle ?? 45}">
-                        <span id="val-cone-angle" class="val-badge">${this.state.settings.coneAngle ?? 45}°</span>
                     </div>
                 </div>
 
@@ -151,24 +158,27 @@ export class Inspector {
         `;
 
         this.dom = {
-            sliderC: this.container.querySelector('#slider-c'),
+            sliderConeAngle: this.container.querySelector('#slider-cone-angle'),
+            valConeAngle: this.container.querySelector('#val-cone-angle'),
             valC: this.container.querySelector('#val-c'),
             sliderObsX: this.container.querySelector('#slider-obs-x'),
+
             btnAddRod: this.container.querySelector('#btn-add-rod'),
             btnAddBarn: this.container.querySelector('#btn-add-barn'),
             shapesList: this.container.querySelector('#shapes-list'),
             shapePropsBox: this.container.querySelector('#shape-props-box'),
             propName: this.container.querySelector('#prop-shape-name'),
             propColor: this.container.querySelector('#prop-shape-color'),
+            sliderShapeBeta: this.container.querySelector('#slider-shape-beta'),
+            valShapeBeta: this.container.querySelector('#val-shape-beta'),
+            propShapeBetaInput: this.container.querySelector('#prop-shape-beta-input'),
             propX0: this.container.querySelector('#prop-shape-x0'),
-            propVx: this.container.querySelector('#prop-shape-vx'),
             propW: this.container.querySelector('#prop-shape-w'),
             propH: this.container.querySelector('#prop-shape-h'),
             btnDeleteShape: this.container.querySelector('#btn-delete-shape'),
+
             sliderLayersCount: this.container.querySelector('#slider-layers-count'),
             valLayersCount: this.container.querySelector('#val-layers-count'),
-            sliderConeAngle: this.container.querySelector('#slider-cone-angle'),
-            valConeAngle: this.container.querySelector('#val-cone-angle'),
             sliderConeOpacity: this.container.querySelector('#slider-cone-opacity'),
             valConeOpacity: this.container.querySelector('#val-cone-opacity'),
             sliderLayerInside: this.container.querySelector('#slider-layer-inside'),
@@ -186,17 +196,20 @@ export class Inspector {
     }
 
     bindEvents() {
-        // Скорость света
-        this.dom.sliderC.addEventListener('input', (e) => {
-            const val = parseFloat(e.target.value);
-            this.dom.valC.textContent = `${val} px/s`;
-            this.state.setSpeedOfLight(val);
+        // Угол светового конуса жестко управляет и 3D-конусом, и 2D-скоростью света
+        this.dom.sliderConeAngle.addEventListener('input', (e) => {
+            const angle = parseInt(e.target.value);
+            this.dom.valConeAngle.textContent = `${angle}°`;
+            this.state.setConeAngle(angle);
+            this.dom.valC.textContent = `${this.state.speedOfLight.toFixed(1)} px/s`;
+            this.updateShapeProps();
         });
 
         // Положение наблюдателя
         this.dom.sliderObsX.addEventListener('input', (e) => {
             this.state.observer.x = parseFloat(e.target.value);
             this.state.emit('settingsChanged', this.state.settings);
+            this.state.emit('timeUpdated', this.state.currentTime);
         });
 
         // Добавление стержня
@@ -205,8 +218,9 @@ export class Inspector {
                 name: 'Новый стержень',
                 type: 'rod',
                 color: '#34d399',
-                x0: -200,
-                vx: 60,
+                x0: -180,
+                betaX: 0.6,
+                speedOfLight: this.state.speedOfLight,
                 width: 60,
                 height: 20
             });
@@ -222,7 +236,8 @@ export class Inspector {
                 type: 'barn',
                 color: '#fbbf24',
                 x0: 0,
-                vx: 0,
+                betaX: 0.0,
+                speedOfLight: this.state.speedOfLight,
                 width: 100,
                 height: 45
             });
@@ -231,14 +246,39 @@ export class Inspector {
             this.state.selectShape(newShape.id);
         });
 
-        // Редактирование свойств фигуры
+        // Редактирование скорости через ползунок beta
+        this.dom.sliderShapeBeta.addEventListener('input', (e) => {
+            const shape = this.state.getSelectedShape();
+            if (!shape) return;
+            const beta = parseFloat(e.target.value);
+            shape.setBetaX(beta);
+            this.dom.propShapeBetaInput.value = beta;
+            this.dom.valShapeBeta.textContent = `${beta.toFixed(2)} c`;
+            this.state.emit('shapesUpdated', this.state.shapes);
+        });
+
+        // Редактирование скорости через свободное числовое поле ввода (без ограничений)
+        this.dom.propShapeBetaInput.addEventListener('input', (e) => {
+            const shape = this.state.getSelectedShape();
+            if (!shape) return;
+            const val = parseFloat(e.target.value);
+            if (!isNaN(val)) {
+                shape.setBetaX(val);
+                if (val >= -1.0 && val <= 1.0) {
+                    this.dom.sliderShapeBeta.value = val;
+                }
+                this.dom.valShapeBeta.textContent = `${val.toFixed(2)} c`;
+                this.state.emit('shapesUpdated', this.state.shapes);
+            }
+        });
+
+        // Редактирование остальных свойств фигуры
         const updateCurrentShape = () => {
             const shape = this.state.getSelectedShape();
             if (!shape) return;
             shape.name = this.dom.propName.value;
             shape.color = this.dom.propColor.value;
             shape.x0 = parseFloat(this.dom.propX0.value) || 0;
-            shape.vx = parseFloat(this.dom.propVx.value) || 0;
             shape.width = parseFloat(this.dom.propW.value) || 10;
             shape.height = parseFloat(this.dom.propH.value) || 10;
             this.renderShapesList();
@@ -248,7 +288,6 @@ export class Inspector {
         this.dom.propName.addEventListener('input', updateCurrentShape);
         this.dom.propColor.addEventListener('input', updateCurrentShape);
         this.dom.propX0.addEventListener('input', updateCurrentShape);
-        this.dom.propVx.addEventListener('input', updateCurrentShape);
         this.dom.propW.addEventListener('input', updateCurrentShape);
         this.dom.propH.addEventListener('input', updateCurrentShape);
 
@@ -265,12 +304,6 @@ export class Inspector {
             const val = parseInt(e.target.value);
             this.dom.valLayersCount.textContent = val;
             this.state.updateSetting('layersCount', val);
-        });
-
-        this.dom.sliderConeAngle.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value);
-            this.dom.valConeAngle.textContent = `${val}°`;
-            this.state.updateSetting('coneAngle', val);
         });
 
         this.dom.sliderConeOpacity.addEventListener('input', (e) => {
@@ -318,6 +351,13 @@ export class Inspector {
             this.renderShapesList();
             this.updateShapeProps();
         });
+
+        this.state.on('settingsChanged', () => {
+            this.dom.sliderConeAngle.value = this.state.settings.coneAngle;
+            this.dom.valConeAngle.textContent = `${this.state.settings.coneAngle}°`;
+            this.dom.valC.textContent = `${this.state.speedOfLight.toFixed(1)} px/s`;
+            this.updateShapeProps();
+        });
     }
 
     renderShapesList() {
@@ -327,10 +367,11 @@ export class Inspector {
         this.state.shapes.forEach(shape => {
             const item = document.createElement('div');
             item.className = `shape-item ${shape.id === this.state.selectedShapeId ? 'active' : ''}`;
+            const betaStr = (shape.betaX !== undefined ? shape.betaX.toFixed(2) : '0') + 'c';
             item.innerHTML = `
                 <span class="shape-badge-color" style="background:${shape.color};"></span>
                 <span class="shape-item-name">${shape.name}</span>
-                <span class="shape-item-type">${shape.type === 'barn' ? 'Сарай' : 'Стержень'}</span>
+                <span class="shape-item-type">${shape.type === 'barn' ? 'Сарай' : betaStr}</span>
             `;
             item.addEventListener('click', () => {
                 this.state.selectShape(shape.id);
@@ -350,8 +391,13 @@ export class Inspector {
         this.dom.propName.value = shape.name;
         this.dom.propColor.value = shape.color;
         this.dom.propX0.value = shape.x0;
-        this.dom.propVx.value = shape.vx;
         this.dom.propW.value = shape.width;
         this.dom.propH.value = shape.height;
+
+        const beta = shape.betaX ?? 0;
+        this.dom.sliderShapeBeta.value = Math.max(-1.0, Math.min(1.0, beta));
+        this.dom.propShapeBetaInput.value = beta;
+        const absVx = (beta * this.state.speedOfLight).toFixed(1);
+        this.dom.valShapeBeta.textContent = `${beta.toFixed(2)} c (${absVx} px/s)`;
     }
 }

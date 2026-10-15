@@ -85,7 +85,7 @@ export class View2D {
         this.state.shapes.forEach(shape => {
             // Если включен режим 'both' или 'instant', рисуем синхронное положение (настоящее t = t_curr)
             if (mode === 'both' || mode === 'instant') {
-                this.drawInstantShape(shape, tCurr, mode === 'both');
+                this.drawInstantShape(shape, tCurr, c, mode === 'both');
             }
 
             // Если включен режим 'both' или 'retarded', рисуем видимое релятивистское положение (свет с задержкой)
@@ -171,9 +171,9 @@ export class View2D {
     /**
      * Отрисовка синхронного (абсолютного) положения объекта в момент t_curr
      */
-    drawInstantShape(shape, tCurr, isGhost) {
+    drawInstantShape(shape, tCurr, c, isGhost) {
         const ctx = this.ctx;
-        const state = shape.getStateAt(tCurr);
+        const state = shape.getStateAt(tCurr, c);
         const screen = this.worldToScreen(state.x, state.y);
         const w = state.width * this.scale;
         const h = state.height * this.scale;
@@ -213,7 +213,7 @@ export class View2D {
      */
     drawRetardedShape(shape, tCurr, obs, c) {
         const ctx = this.ctx;
-        const stateInstant = shape.getStateAt(tCurr);
+        const stateInstant = shape.getStateAt(tCurr, c);
 
         // Для отрисовки искривления формы сканируем вертикальные полосы стержня
         const stepX = 1.5;
@@ -230,7 +230,7 @@ export class View2D {
 
         for (let x = startX; x <= endX; x += stepX) {
             const tRet = SpacetimeMath.getRetardedTime(x, stateInstant.y, obs.x, obs.y, tCurr, c);
-            const pastState = shape.getStateAt(tRet);
+            const pastState = shape.getStateAt(tRet, c);
 
             // Проверяем, находится ли точка x внутри прямоугольника в момент tRet
             const halfW = pastState.width / 2;

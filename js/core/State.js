@@ -1,6 +1,8 @@
 /**
  * State.js
  * Центральное реактивное состояние приложения и шина событий.
+ * Скорость света c жестко синхронизирована с углом светового конуса 3D:
+ * c = (timeHeight / duration) * tan(coneAngle)
  */
 
 import { Presets } from './ShapeModel.js';
@@ -9,16 +11,19 @@ export class AppState {
     constructor() {
         this.listeners = new Map();
 
+        // Геометрические масштабы 3D пространства-времени
+        this.spaceSize = 400;      // [-200, 200]
+        this.timeHeight = 320;     // Высота оси времени Y
+        this.duration = 6.0;       // Длительность таймлайна в секундах
+
         // Параметры времени
         this.currentTime = 0.0;
-        this.duration = 6.0; // секунды
         this.fps = 60;
         this.isPlaying = false;
         this.playbackSpeed = 1.0;
         this.lastFrameTimestamp = null;
 
-        // Физика пространства-времени
-        this.speedOfLight = 90.0; // px/s (позволяет наглядно видеть задержку на масштабе 500px)
+        // Положение наблюдателя
         this.observer = { x: 0, y: 0 };
 
         // Режим отображения: 'split', '3d', '2d'
@@ -26,6 +31,7 @@ export class AppState {
 
         // Настройки рендереров
         this.settings = {
+            coneAngle: 45,              // Угол светового конуса в градусах (45° = канонический Минковский)
             layersCount: 36,            // Количество слоёв-кадров в 3D
             layersOpacity: 0.16,        // Базовая прозрачность
             layerOpacityInside: 0.65,   // Прозрачность кадров внутри светового конуса
@@ -33,7 +39,6 @@ export class AppState {
             coneOpacity: 0.25,          // Прозрачность самого 3D-конуса
             shapeOpacityInside: 0.95,   // Прозрачность фигур внутри конуса
             shapeOpacityOutside: 0.12,  // Прозрачность фигур снаружи конуса
-            coneAngle: 45,              // Угол светового конуса (градусы, по умолчанию 45°)
             showLayers: true,           // Отображать срезы времени
             showWorldTubes: true,       // Отображать сплошные мировые трубки в 3D
             showLightCone: true,        // Отображать 3D световой конус
@@ -42,14 +47,63 @@ export class AppState {
             coneResolution: 48          // Детализация конуса
         };
 
+        // Скорость света c вычисляется строго из угла конуса:
+        // c = (H / T) * tan(angle)
+        this.speedOfLight = this.calculateSpeedOfLight(this.settings.coneAngle);
+
         // Объекты сцены
         this.shapes = Presets.processingRod();
         this.selectedShapeId = this.shapes[0]?.id || null;
+
+        this.updateShapesSpeedOfLight();
     }
 
     /**
-     * Подписка на события
+     * Формула жесткой связи угла светового конуса и скорости света:
+     * timeScale = H_time / T_total (px/sec)
+     * c = timeScale * tan(angle)
      */
+    calculateSpeedOfLight(angleDeg) {
+        const timeScale = this.timeHeight / this.duration; // 320 / 6 = 53.333 px/s при 45°
+        const slope = Math.tan(angleDeg * (Math.PI / 180));
+        return timeScale * slope;
+    }
+
+    /**
+     * Обратная формула: расчет угла конуса из скорости света
+     */
+    calculateConeAngle(c) {
+        const timeScale = this.timeHeight / this.duration;
+        const slope = c / timeScale;
+        return (Math.atan(slope) * 180) / Math.PI;
+    }
+
+    setConeAngle(angleDeg) {
+        const clamped = Math.max(15, Math.min(75, angleDeg));
+        this.settings.coneAngle = clamped;
+        this.speedOfLight = this.calculateSpeedOfLight(clamped);
+        this.updateShapesSpeedOfLight();
+        this.emit('settingsChanged', this.settings);
+        this.emit('timeUpdated', this.currentTime);
+    }
+
+    setSpeedOfLight(c) {
+        const clampedC = Math.max(10, c);
+        this.speedOfLight = clampedC;
+        this.settings.coneAngle = Math.round(this.calculateConeAngle(clampedC));
+        this.updateShapesSpeedOfLight();
+        this.emit('settingsChanged', this.settings);
+        this.emit('timeUpdated', this.currentTime);
+    }
+
+    updateShapesSpeedOfLight() {
+        this.shapes.forEach(s => {
+            if (typeof s.setSpeedOfLight === 'function') {
+                s.setSpeedOfLight(this.speedOfLight);
+            }
+        });
+    }
+
     on(event, callback) {
         if (!this.listeners.has(event)) {
             this.listeners.set(event, new Set());
@@ -58,9 +112,6 @@ export class AppState {
         return () => this.listeners.get(event).delete(callback);
     }
 
-    /**
-     * Генерация событий
-     */
     emit(event, payload) {
         if (this.listeners.has(event)) {
             for (const cb of this.listeners.get(event)) {
@@ -97,11 +148,6 @@ export class AppState {
         this.setTime(newTime);
     }
 
-    setSpeedOfLight(c) {
-        this.speedOfLight = Math.max(10, c);
-        this.emit('settingsChanged', this.settings);
-    }
-
     setViewMode(mode) {
         if (this.viewMode !== mode) {
             this.viewMode = mode;
@@ -111,6 +157,10 @@ export class AppState {
 
     updateSetting(key, value) {
         this.settings[key] = value;
+        if (key === 'coneAngle') {
+            this.setConeAngle(value);
+            return;
+        }
         this.emit('settingsChanged', this.settings);
     }
 
@@ -125,6 +175,7 @@ export class AppState {
 
     setShapes(shapes) {
         this.shapes = shapes;
+        this.updateShapesSpeedOfLight();
         this.selectedShapeId = shapes[0]?.id || null;
         this.emit('shapesUpdated', this.shapes);
         this.emit('shapeSelected', this.getSelectedShape());

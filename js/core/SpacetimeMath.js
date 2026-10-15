@@ -54,7 +54,7 @@ export class SpacetimeMath {
      */
     static measureObservedRod(shape, obsX, obsY, currentTime, speedOfLight, step = 1.0) {
         // Оцениваем диапазон поиска
-        const stateInstant = shape.getStateAt(currentTime);
+        const stateInstant = shape.getStateAt(currentTime, speedOfLight);
         const searchMargin = 150;
         const minX = stateInstant.x - stateInstant.width - searchMargin;
         const maxX = stateInstant.x + stateInstant.width + searchMargin;
@@ -67,7 +67,7 @@ export class SpacetimeMath {
         // Сканируем луч зрения вдоль горизонтали
         for (let x = minX; x <= maxX; x += step) {
             const tRet = this.getRetardedTime(x, testY, obsX, obsY, currentTime, speedOfLight);
-            const pastState = shape.getStateAt(tRet);
+            const pastState = shape.getStateAt(tRet, speedOfLight);
 
             if (this.isInsideBox(x, testY, pastState)) {
                 hit = true;
