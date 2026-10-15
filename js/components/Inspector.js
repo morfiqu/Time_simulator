@@ -4,13 +4,23 @@
  * Меню объектов сцены вынесено в интерактивный 2D-редактор кадра.
  */
 
+import { LorentzDiagram } from './LorentzDiagram.js';
+
 export class Inspector {
     constructor(containerElement, state) {
         this.container = containerElement;
         this.state = state;
 
         this.renderDom();
+        this.initLorentzDiagram();
         this.bindEvents();
+    }
+
+    initLorentzDiagram() {
+        const box = this.container.querySelector('#lorentz-diagram-box');
+        if (box) {
+            this.lorentzDiagram = new LorentzDiagram(box, this.state);
+        }
     }
 
     renderDom() {
@@ -35,6 +45,11 @@ export class Inspector {
                     <label>Позиция наблюдателя X:</label>
                     <input type="range" id="slider-obs-x" min="-180" max="180" step="5" value="${this.state.observer.x}">
                 </div>
+            </div>
+
+            <div class="panel-section">
+                <h3 class="section-title">📐 Лоренцево сжатие (4-скорость)</h3>
+                <div id="lorentz-diagram-box"></div>
             </div>
 
             <div class="panel-section">

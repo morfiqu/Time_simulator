@@ -842,3 +842,114 @@ input[type="range"]::-webkit-slider-thumb:hover {
     cursor: pointer;
     padding: 1px;
 }
+
+/* ==========================================================================
+   Lorentz Contraction & 4-Velocity Diagram
+   ========================================================================== */
+.lorentz-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.lorentz-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+}
+
+.lorentz-stat-box {
+    background: var(--bg-darkest);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 4px 6px;
+    display: flex;
+    flex-direction: column;
+}
+
+.lorentz-stat-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-bottom: 1px;
+}
+
+.lorentz-stat-val {
+    font-size: 12px;
+    font-family: var(--font-mono);
+}
+
+.text-gold { color: var(--accent-gold); }
+.text-cyan { color: var(--accent-cyan); }
+.text-green { color: var(--accent-green); }
+
+.lorentz-rod-box {
+    background: var(--bg-darkest);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lorentz-rod-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.lorentz-rod-container {
+    position: relative;
+    height: 32px;
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 4px;
+    border: 1px dashed var(--border-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 2px 4px;
+    gap: 3px;
+}
+
+.rod-bar {
+    height: 10px;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    transition: width 0.1s ease-out;
+}
+
+.rod-rest {
+    width: 100%;
+    border: 1px dashed #38bdf8;
+    background: rgba(56, 189, 248, 0.08);
+}
+
+.rod-contracted {
+    width: 66%;
+    background: #38bdf8;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.rod-tag {
+    font-size: 8px;
+    font-family: var(--font-mono);
+    color: #ffffff;
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.lorentz-preset-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.lorentz-preset-buttons button {
+    flex: 1 1 28%;
+    font-size: 10px;
+    padding: 3px 2px;
+    text-align: center;
+}
