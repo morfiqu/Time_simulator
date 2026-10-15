@@ -23,7 +23,16 @@
     <!-- Основная рабочая область: 3D и 2D вьюпорты + боковая панель -->
     <main class="app-workspace">
         <div class="viewports-wrapper" id="viewports-wrapper">
-            <!-- 3D Вид: Пространство-время Минковского, световой конус, слои -->
+            <!-- Окно 1: 2D Векторный аниматор и редактор кадра (Ground Truth) -->
+            <div class="viewport-box" id="viewport-editor-container">
+                <div class="viewport-header">
+                    <span>✏️ Редактор сцены (Кадр t)</span>
+                    <span class="viewport-badge">Векторный аниматор</span>
+                </div>
+                <div class="viewport-canvas-container" id="canvas-editor-box"></div>
+            </div>
+
+            <!-- Окно 2: 3D Вид: Пространство-время Минковского, световой конус, слои -->
             <div class="viewport-box" id="viewport-3d-container">
                 <div class="viewport-header">
                     <span>3D Пространство-время (Ось Y = Время t)</span>

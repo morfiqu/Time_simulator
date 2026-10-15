@@ -23,14 +23,20 @@ export class Toolbar {
 
             <div class="toolbar-center">
                 <div class="view-mode-buttons">
-                    <button class="btn btn-sm btn-tab active" data-view="split" title="Двухоконный режим (3D + 2D)">
-                        ◫ Сплит
+                    <button class="btn btn-sm btn-tab active" data-view="all" title="Все 3 окна (Редактор + 3D + 2D)">
+                        ▦ Все 3 окна
+                    </button>
+                    <button class="btn btn-sm btn-tab" data-view="editor" title="Только Редактор кадра">
+                        ✏️ Редактор
                     </button>
                     <button class="btn btn-sm btn-tab" data-view="3d" title="Только 3D пространство-время">
                         🌐 3D Минковский
                     </button>
                     <button class="btn btn-sm btn-tab" data-view="2d" title="Только 2D вид наблюдателя">
                         👁️ 2D Наблюдатель
+                    </button>
+                    <button class="btn btn-sm btn-tab" data-view="split" title="Двухоконный сплит (3D + 2D)">
+                        ◫ 3D + 2D
                     </button>
                 </div>
             </div>

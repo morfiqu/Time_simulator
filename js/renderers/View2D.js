@@ -178,32 +178,54 @@ export class View2D {
         const screen = this.worldToScreen(state.x, state.y);
         const w = state.width * this.scale;
         const h = state.height * this.scale;
+        const rad = (state.rotation * Math.PI) / 180;
 
         ctx.save();
+        ctx.translate(screen.x, screen.y);
+        ctx.rotate(rad);
+
         if (isGhost) {
             // Призрачный контур (истинное положение)
             ctx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 4]);
             ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
-            ctx.fillRect(screen.x - w / 2, screen.y - h / 2, w, h);
-            ctx.strokeRect(screen.x - w / 2, screen.y - h / 2, w, h);
+
+            if (state.type === 'circle') {
+                const r = Math.max(w, h) / 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            } else {
+                ctx.fillRect(-w / 2, -h / 2, w, h);
+                ctx.strokeRect(-w / 2, -h / 2, w, h);
+            }
 
             // Текстовая метка "Истина (Sync)"
             ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
             ctx.font = '10px Inter, sans-serif';
-            ctx.fillText('Истинное ' + Math.round(state.x), screen.x - w / 2, screen.y - h / 2 - 5);
+            ctx.fillText('Истинное ' + Math.round(state.x), -w / 2, -h / 2 - 5);
         } else {
-            ctx.fillStyle = shape.color;
-            ctx.fillRect(screen.x - w / 2, screen.y - h / 2, w, h);
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(screen.x - w / 2, screen.y - h / 2, w, h);
+            ctx.fillStyle = state.color || shape.color;
+            ctx.strokeStyle = state.strokeColor || '#ffffff';
+            ctx.lineWidth = state.strokeWidth || 1;
+
+            if (state.type === 'circle') {
+                const r = Math.max(w, h) / 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            } else {
+                ctx.fillRect(-w / 2, -h / 2, w, h);
+                ctx.strokeRect(-w / 2, -h / 2, w, h);
+            }
         }
 
         // Если это сарай, отрисовываем двери
         if (shape.type === 'barn') {
-            this.drawBarnDoors(screen, w, h, state.doorsOpen, isGhost);
+            this.drawBarnDoors({ x: 0, y: 0 }, w, h, state.doorsOpen, isGhost);
         }
 
         ctx.restore();
@@ -223,6 +245,42 @@ export class View2D {
             if (shape.type === 'rod' || this.state.shapes[0] === shape) {
                 this.currentMeasurement = { isVisible: false, realLength: stateInstant.width };
             }
+            return;
+        }
+
+        // Для кругов или вращающихся объектов рисуем их ретардированное состояние
+        if (shape.type === 'circle' || Math.abs(stateInstant.rotation) > 0.01) {
+            const tRet = SpacetimeMath.getRetardedTime(stateInstant.x, stateInstant.y, obs.x, obs.y, tCurr, c);
+            if (tRet < 0) return; // Свет ещё не дошел
+
+            const pastState = shape.getStateAt(tRet, c);
+            const screen = this.worldToScreen(pastState.x, pastState.y);
+            const w = pastState.width * this.scale;
+            const h = pastState.height * this.scale;
+            const rad = (pastState.rotation * Math.PI) / 180;
+
+            ctx.save();
+            ctx.translate(screen.x, screen.y);
+            ctx.rotate(rad);
+
+            ctx.fillStyle = pastState.color || shape.color;
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = pastState.color || shape.color;
+            ctx.shadowBlur = 10;
+
+            if (shape.type === 'circle') {
+                const r = Math.max(w, h) / 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            } else {
+                ctx.fillRect(-w / 2, -h / 2, w, h);
+                ctx.strokeRect(-w / 2, -h / 2, w, h);
+            }
+
+            ctx.restore();
             return;
         }
 

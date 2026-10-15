@@ -13,8 +13,9 @@ export class AppState {
 
         // Геометрические масштабы 3D пространства-времени
         this.spaceSize = 400;      // [-200, 200]
-        this.timeHeight = 320;     // Высота оси времени Y
+        this.heightPerSecond = 53.3333; // Константный вертикальный масштаб времени: 53.3 px за 1 секунду
         this.duration = 6.0;       // Длительность таймлайна в секундах
+        this.timeHeight = this.duration * this.heightPerSecond; // Высота оси времени Y растет пропорционально времени
 
         // Параметры времени
         this.currentTime = 0.0;
@@ -26,13 +27,17 @@ export class AppState {
         // Положение наблюдателя
         this.observer = { x: 0, y: 0 };
 
-        // Режим отображения: 'split', '3d', '2d'
-        this.viewMode = 'split';
+        // Режим отображения: 'all', 'split', 'editor', '3d', '2d'
+        this.viewMode = 'all';
+
+        // Активный инструмент векторного редактора: 'select', 'rect', 'circle', 'pivot'
+        this.activeEditorTool = 'select';
 
         // Настройки рендереров
         this.settings = {
             coneAngle: 45,              // Угол светового конуса в градусах (45° = канонический Минковский)
-            layersCount: 36,            // Количество слоёв-кадров в 3D
+            layersPerSecond: 6,         // Плотность слоёв времени (слоёв в 1 секунду)
+            layersCount: Math.round(this.duration * 6) + 1, // Динамическое число слоёв (добавляются новые слои)
             layersOpacity: 0.16,        // Базовая прозрачность
             layerOpacityInside: 0.65,   // Прозрачность кадров внутри светового конуса
             layerOpacityOutside: 0.05,  // Прозрачность кадров снаружи конуса
@@ -50,8 +55,8 @@ export class AppState {
             coneResolution: 48          // Детализация конуса
         };
 
-        // Скорость света c вычисляется строго из угла конуса:
-        // c = (H / T) * tan(angle)
+        // Скорость света c константна и зависит только от угла конуса:
+        // c = heightPerSecond * tan(angle)
         this.speedOfLight = this.calculateSpeedOfLight(this.settings.coneAngle);
 
         // Объекты сцены
@@ -63,21 +68,22 @@ export class AppState {
 
     /**
      * Формула жесткой связи угла светового конуса и скорости света:
-     * timeScale = H_time / T_total (px/sec)
-     * c = timeScale * tan(angle)
+     * timeScale = heightPerSecond (px/sec)
+     * c = heightPerSecond * tan(angle)
+     * Скорость света константна и не зависит от добавления новых секунд в длительность!
      */
     calculateSpeedOfLight(angleDeg) {
-        const timeScale = this.timeHeight / this.duration; // 320 / 6 = 53.333 px/s при 45°
         const slope = Math.tan(angleDeg * (Math.PI / 180));
-        return timeScale * slope;
+        return this.heightPerSecond * slope;
     }
 
     /**
      * Обратная формула: расчет угла конуса из скорости света
      */
     calculateConeAngle(c) {
-        const timeScale = this.timeHeight / this.duration;
-        const slope = c / timeScale;
+        const slope = c / this.heightPerSecond;
+        return (Math.atan(slope) * 180) / Math.PI;
+    }
         return (Math.atan(slope) * 180) / Math.PI;
     }
 
@@ -105,8 +111,14 @@ export class AppState {
         const clamped = Math.max(0.5, Math.min(300, val));
         this.duration = clamped;
 
-        // Пересчитываем скорость света c для сохранения угла конуса Минковского:
-        // c = (H / T) * tan(angle)
+        // Ось времени в 3D растет вверх пропорционально времени
+        this.timeHeight = this.duration * this.heightPerSecond;
+
+        // Слои не растягиваются, а добавляются новые:
+        const lps = this.settings.layersPerSecond || 6;
+        this.settings.layersCount = Math.max(2, Math.round(this.duration * lps) + 1);
+
+        // Скорость света константна
         this.speedOfLight = this.calculateSpeedOfLight(this.settings.coneAngle);
         this.updateShapesSpeedOfLight();
 
@@ -117,6 +129,17 @@ export class AppState {
         this.emit('durationChanged', this.duration);
         this.emit('settingsChanged', this.settings);
         this.emit('timeUpdated', this.currentTime);
+    }
+
+    setEditorTool(tool) {
+        this.activeEditorTool = tool;
+        this.emit('editorToolChanged', tool);
+    }
+
+    addShape(shape) {
+        this.shapes.push(shape);
+        this.setShapes(this.shapes);
+        this.selectShape(shape.id);
     }
 
     updateShapesSpeedOfLight() {

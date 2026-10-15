@@ -156,18 +156,30 @@ export class View3D {
 
         this.tubesGroup = new THREE.Group();
         this.scene.add(this.tubesGroup);
+
+        this.staticGroup = new THREE.Group();
+        this.scene.add(this.staticGroup);
     }
 
-    initStaticElements() {
+    buildStaticElements() {
+        while (this.staticGroup.children.length > 0) {
+            const obj = this.staticGroup.children[0];
+            this.staticGroup.remove(obj);
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+        }
+
+        const H = this.timeHeight;
+
         // Нижняя сетка пространства (t = 0)
         const gridFloor = new THREE.GridHelper(this.spaceSize, 20, 0x0284c7, 0x1e293b);
         gridFloor.position.y = 0;
-        this.scene.add(gridFloor);
+        this.staticGroup.add(gridFloor);
 
         // Верхняя сетка пространства (t = duration)
         const gridCeil = new THREE.GridHelper(this.spaceSize, 20, 0x475569, 0x111c30);
-        gridCeil.position.y = this.timeHeight;
-        this.scene.add(gridCeil);
+        gridCeil.position.y = H;
+        this.staticGroup.add(gridCeil);
 
         // Угловые направляющие колонны
         const corners = [
@@ -180,27 +192,32 @@ export class View3D {
         corners.forEach(([cx, cz]) => {
             const points = [
                 new THREE.Vector3(cx, 0, cz),
-                new THREE.Vector3(cx, this.timeHeight, cz)
+                new THREE.Vector3(cx, H, cz)
             ];
             const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
             const lineMat = new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.5 });
-            this.scene.add(new THREE.Line(lineGeo, lineMat));
+            this.staticGroup.add(new THREE.Line(lineGeo, lineMat));
         });
 
         // Центральная стрела времени (Time Arrow)
         const axisPoints = [
             new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, this.timeHeight + 35, 0)
+            new THREE.Vector3(0, H + 35, 0)
         ];
         const axisGeo = new THREE.BufferGeometry().setFromPoints(axisPoints);
         const axisMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 });
-        this.scene.add(new THREE.Line(axisGeo, axisMat));
+        this.staticGroup.add(new THREE.Line(axisGeo, axisMat));
 
         const arrowGeo = new THREE.ConeGeometry(5, 15, 16);
         const arrowMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
         const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
-        arrowMesh.position.set(0, this.timeHeight + 35, 0);
-        this.scene.add(arrowMesh);
+        arrowMesh.position.set(0, H + 35, 0);
+        this.staticGroup.add(arrowMesh);
+
+        // Обновляем цель управления камерой на центр текущей высоты
+        if (this.controls) {
+            this.controls.target.set(0, H / 2, 0);
+        }
     }
 
     bindEvents() {
@@ -234,6 +251,8 @@ export class View3D {
     }
 
     rebuildGeometry() {
+        this.timeHeight = this.state.timeHeight;
+        this.buildStaticElements();
         this.buildLayers();
         this.buildWorldTubes();
         this.updateScene();
@@ -307,13 +326,18 @@ export class View3D {
             const shapeMeshes = [];
             this.state.shapes.forEach(shape => {
                 const s = shape.getStateAt(t, this.state.speedOfLight);
-                const shapeGeo = new THREE.PlaneGeometry(s.width, s.height);
+                let shapeGeo;
+                if (s.type === 'circle') {
+                    shapeGeo = new THREE.CircleGeometry(s.radius || 15, 32);
+                } else {
+                    shapeGeo = new THREE.PlaneGeometry(s.width, s.height);
+                }
                 shapeGeo.rotateX(-Math.PI / 2);
 
                 const shapeUniforms = {
                     uApexXZ: { value: new THREE.Vector2(this.state.observer.x, this.state.observer.y) },
                     uConeRadius: { value: 0.0 },
-                    uBaseColor: { value: new THREE.Color(shape.color) },
+                    uBaseColor: { value: new THREE.Color(s.color || shape.color) },
                     uOpacityInside: { value: this.state.settings.shapeOpacityInside ?? 0.95 },
                     uOpacityOutside: { value: this.state.settings.shapeOpacityOutside ?? 0.12 },
                     uIsFuture: { value: 0.0 }
@@ -329,6 +353,8 @@ export class View3D {
 
                 const shapeMesh = new THREE.Mesh(shapeGeo, shapeMat);
                 shapeMesh.position.set(s.x, yPos + 0.1, s.y);
+                // Вращение фигуры вокруг оси времени Y
+                shapeMesh.rotation.y = -s.rotation * (Math.PI / 180);
                 this.layersGroup.add(shapeMesh);
 
                 shapeMeshes.push({ mesh: shapeMesh, uniforms: shapeUniforms });
@@ -376,8 +402,16 @@ export class View3D {
                 const yPos = this.timeToY(t);
                 const s = shape.getStateAt(t, this.state.speedOfLight);
 
+                const rad = (-s.rotation * Math.PI) / 180;
+                const cos = Math.cos(rad);
+                const sin = Math.sin(rad);
+
                 corners.forEach(([sx, sz]) => {
-                    vertices.push(s.x + sx * s.width, yPos, s.y + sz * s.height);
+                    const localX = sx * s.width;
+                    const localZ = sz * s.height;
+                    const rotX = localX * cos - localZ * sin;
+                    const rotZ = localX * sin + localZ * cos;
+                    vertices.push(s.x + rotX, yPos, s.y + rotZ);
                 });
 
                 if (step > 0) {

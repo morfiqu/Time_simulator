@@ -91,6 +91,32 @@ export class Inspector {
                         <input type="number" id="prop-shape-h" class="input-num-sm" min="6" max="100" step="2" style="width:100%;">
                     </div>
 
+                    <div class="control-row-grid" style="margin-top:6px;">
+                        <div>
+                            <label>Вращение (°):</label>
+                            <input type="number" id="prop-shape-rot" class="input-num-sm" step="5" value="0">
+                        </div>
+                        <div>
+                            <label>Обводка:</label>
+                            <input type="color" id="prop-shape-stroke" class="input-color-sm" value="#ffffff">
+                        </div>
+                    </div>
+
+                    <div class="control-row-grid">
+                        <div>
+                            <label>Пивот dX:</label>
+                            <input type="number" id="prop-shape-pivot-x" class="input-num-sm" step="5" value="0">
+                        </div>
+                        <div>
+                            <label>Пивот dY:</label>
+                            <input type="number" id="prop-shape-pivot-y" class="input-num-sm" step="5" value="0">
+                        </div>
+                    </div>
+
+                    <button id="btn-shape-add-key" class="btn btn-xs btn-primary btn-block mt-2">
+                        ◆ Зафиксировать ключ (t = <span id="val-cur-time-label">0.00</span>s)
+                    </button>
+
                     <button id="btn-delete-shape" class="btn btn-xs btn-danger btn-block mt-2">
                         Удалить объект
                     </button>
@@ -200,6 +226,12 @@ export class Inspector {
             propX0: this.container.querySelector('#prop-shape-x0'),
             propW: this.container.querySelector('#prop-shape-w'),
             propH: this.container.querySelector('#prop-shape-h'),
+            propRot: this.container.querySelector('#prop-shape-rot'),
+            propStroke: this.container.querySelector('#prop-shape-stroke'),
+            propPivotX: this.container.querySelector('#prop-shape-pivot-x'),
+            propPivotY: this.container.querySelector('#prop-shape-pivot-y'),
+            btnShapeAddKey: this.container.querySelector('#btn-shape-add-key'),
+            valCurTimeLabel: this.container.querySelector('#val-cur-time-label'),
             btnDeleteShape: this.container.querySelector('#btn-delete-shape'),
 
             chkHardCut: this.container.querySelector('#chk-hard-cut'),
@@ -308,18 +340,43 @@ export class Inspector {
             if (!shape) return;
             shape.name = this.dom.propName.value;
             shape.color = this.dom.propColor.value;
+            shape.strokeColor = this.dom.propStroke.value;
             shape.x0 = parseFloat(this.dom.propX0.value) || 0;
             shape.width = parseFloat(this.dom.propW.value) || 10;
             shape.height = parseFloat(this.dom.propH.value) || 10;
+            shape.rotation = parseFloat(this.dom.propRot.value) || 0;
+            shape.pivotX = parseFloat(this.dom.propPivotX.value) || 0;
+            shape.pivotY = parseFloat(this.dom.propPivotY.value) || 0;
             this.renderShapesList();
             this.state.emit('shapesUpdated', this.state.shapes);
         };
 
         this.dom.propName.addEventListener('input', updateCurrentShape);
         this.dom.propColor.addEventListener('input', updateCurrentShape);
+        this.dom.propStroke.addEventListener('input', updateCurrentShape);
         this.dom.propX0.addEventListener('input', updateCurrentShape);
         this.dom.propW.addEventListener('input', updateCurrentShape);
         this.dom.propH.addEventListener('input', updateCurrentShape);
+        this.dom.propRot.addEventListener('input', updateCurrentShape);
+        this.dom.propPivotX.addEventListener('input', updateCurrentShape);
+        this.dom.propPivotY.addEventListener('input', updateCurrentShape);
+
+        this.dom.btnShapeAddKey.addEventListener('click', () => {
+            const shape = this.state.getSelectedShape();
+            if (shape) {
+                const t = this.state.currentTime;
+                shape.setKeyframe(t, {
+                    x: shape.x0,
+                    y: shape.y0,
+                    rotation: shape.rotation,
+                    pivotX: shape.pivotX,
+                    pivotY: shape.pivotY,
+                    color: shape.color,
+                    strokeColor: shape.strokeColor
+                });
+                this.state.emit('shapesUpdated', this.state.shapes);
+            }
+        });
 
         // Удаление фигуры
         this.dom.btnDeleteShape.addEventListener('click', () => {
@@ -388,6 +445,12 @@ export class Inspector {
         });
 
         // Слушатели событий состояния
+        this.state.on('timeUpdated', (t) => {
+            if (this.dom.valCurTimeLabel) {
+                this.dom.valCurTimeLabel.textContent = t.toFixed(2);
+            }
+        });
+
         this.state.on('shapesUpdated', () => {
             this.renderShapesList();
             this.updateShapeProps();
@@ -425,10 +488,11 @@ export class Inspector {
             const item = document.createElement('div');
             item.className = `shape-item ${shape.id === this.state.selectedShapeId ? 'active' : ''}`;
             const betaStr = (shape.betaX !== undefined ? shape.betaX.toFixed(2) : '0') + 'c';
+            const typeLabel = shape.type === 'circle' ? 'Круг' : (shape.type === 'barn' ? 'Сарай' : 'Прямоуг');
             item.innerHTML = `
                 <span class="shape-badge-color" style="background:${shape.color};"></span>
                 <span class="shape-item-name">${shape.name}</span>
-                <span class="shape-item-type">${shape.type === 'barn' ? 'Сарай' : betaStr}</span>
+                <span class="shape-item-type">${shape.keyframes && shape.keyframes.length > 0 ? 'Анимация' : betaStr} (${typeLabel})</span>
             `;
             item.addEventListener('click', () => {
                 this.state.selectShape(shape.id);
@@ -447,9 +511,13 @@ export class Inspector {
         this.dom.shapePropsBox.style.display = 'block';
         this.dom.propName.value = shape.name;
         this.dom.propColor.value = shape.color;
+        if (this.dom.propStroke) this.dom.propStroke.value = shape.strokeColor || '#ffffff';
         this.dom.propX0.value = shape.x0;
         this.dom.propW.value = shape.width;
         this.dom.propH.value = shape.height;
+        if (this.dom.propRot) this.dom.propRot.value = shape.rotation ?? 0;
+        if (this.dom.propPivotX) this.dom.propPivotX.value = shape.pivotX ?? 0;
+        if (this.dom.propPivotY) this.dom.propPivotY.value = shape.pivotY ?? 0;
 
         const beta = shape.betaX ?? 0;
         this.dom.sliderShapeBeta.value = Math.max(-1.0, Math.min(1.0, beta));
