@@ -53,23 +53,27 @@ export class SpacetimeMath {
      * с учетом светового конуса наблюдателя.
      */
     static measureObservedRod(shape, obsX, obsY, currentTime, speedOfLight, step = 1.0) {
-        // Оцениваем диапазон поиска
+        if (speedOfLight <= 0 || currentTime <= 0) return null;
+
+        const maxRadius = speedOfLight * currentTime;
         const stateInstant = shape.getStateAt(currentTime, speedOfLight);
-        const searchMargin = 150;
-        const minX = stateInstant.x - stateInstant.width - searchMargin;
-        const maxX = stateInstant.x + stateInstant.width + searchMargin;
         const testY = stateInstant.y;
+
+        // Физический световой горизонт: фотоны успели дойти только с расстояния r <= c * currentTime
+        const minScanX = Math.max(-250, obsX - maxRadius);
+        const maxScanX = Math.min(250, obsX + maxRadius);
 
         let observedMinX = Infinity;
         let observedMaxX = -Infinity;
         let hit = false;
 
-        // Сканируем луч зрения вдоль горизонтали
-        for (let x = minX; x <= maxX; x += step) {
+        for (let x = minScanX; x <= maxScanX; x += step) {
             const tRet = this.getRetardedTime(x, testY, obsX, obsY, currentTime, speedOfLight);
-            const pastState = shape.getStateAt(tRet, speedOfLight);
+            if (tRet < 0) continue; // Свет от этой точки ещё не родился в момент t=0
 
-            if (this.isInsideBox(x, testY, pastState)) {
+            const pastState = shape.getStateAt(tRet, speedOfLight);
+            const halfW = pastState.width / 2;
+            if (x >= pastState.x - halfW && x <= pastState.x + halfW) {
                 hit = true;
                 if (x < observedMinX) observedMinX = x;
                 if (x > observedMaxX) observedMaxX = x;
@@ -88,6 +92,7 @@ export class SpacetimeMath {
             minX: observedMinX,
             maxX: observedMaxX,
             centerX: (observedMinX + observedMaxX) / 2,
+            centerY: testY,
             observedLength,
             realLength,
             factor

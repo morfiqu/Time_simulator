@@ -34,6 +34,7 @@ class Application {
         this.viewport2D = document.getElementById('viewport-2d-container');
 
         this.state.on('viewModeChanged', (mode) => this.applyViewMode(mode));
+        this.applyViewMode(this.state.viewMode);
     }
 
     initRenderers() {
@@ -51,18 +52,18 @@ class Application {
     applyViewMode(mode) {
         if (mode === '3d') {
             this.viewport3D.style.display = 'flex';
-            this.viewport3D.style.flex = '1';
+            this.viewport3D.style.flex = '1 1 0%';
             this.viewport2D.style.display = 'none';
         } else if (mode === '2d') {
             this.viewport3D.style.display = 'none';
             this.viewport2D.style.display = 'flex';
-            this.viewport2D.style.flex = '1';
+            this.viewport2D.style.flex = '1 1 0%';
         } else {
             // 'split'
             this.viewport3D.style.display = 'flex';
-            this.viewport3D.style.flex = '1.2';
+            this.viewport3D.style.flex = '1 1 0%';
             this.viewport2D.style.display = 'flex';
-            this.viewport2D.style.flex = '1';
+            this.viewport2D.style.flex = '1 1 0%';
         }
 
         // Обновляем размеры рендереров после анимации раскладки

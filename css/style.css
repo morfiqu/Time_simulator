@@ -163,12 +163,13 @@ body {
 }
 
 .viewport-box {
+    flex: 1;
     background: var(--bg-darkest);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     position: relative;
-    min-width: 280px;
+    min-width: 0;
 }
 
 .viewport-header {

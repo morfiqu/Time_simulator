@@ -215,11 +215,20 @@ export class View2D {
         const ctx = this.ctx;
         const stateInstant = shape.getStateAt(tCurr, c);
 
-        // Для отрисовки искривления формы сканируем вертикальные полосы стержня
-        const stepX = 1.5;
-        const searchRange = 250;
-        const startX = stateInstant.x - stateInstant.width - searchRange;
-        const endX = stateInstant.x + stateInstant.width + searchRange;
+        // Физический световой горизонт наблюдателя:
+        // Фотоны могли дойти только из круга радиусом R = c * tCurr (испущенные в t >= 0)
+        const maxRadius = c * tCurr;
+        if (maxRadius <= 0.001) {
+            if (shape.type === 'rod' || this.state.shapes[0] === shape) {
+                this.currentMeasurement = { isVisible: false, realLength: stateInstant.width };
+            }
+            return;
+        }
+
+        // Сканируем только внутри причинного светового горизонта [obs.x - maxRadius, obs.x + maxRadius]
+        const startX = Math.max(-250, obs.x - maxRadius);
+        const endX = Math.min(250, obs.x + maxRadius);
+        const stepX = 1.0;
 
         ctx.save();
         ctx.fillStyle = shape.color;
@@ -230,6 +239,10 @@ export class View2D {
 
         for (let x = startX; x <= endX; x += stepX) {
             const tRet = SpacetimeMath.getRetardedTime(x, stateInstant.y, obs.x, obs.y, tCurr, c);
+            // Если tRet < 0: событие произошло ДО начала симуляции (до t=0).
+            // До наблюдателя этот свет ещё не успел дойти!
+            if (tRet < 0) continue;
+
             const pastState = shape.getStateAt(tRet, c);
 
             // Проверяем, находится ли точка x внутри прямоугольника в момент tRet
@@ -238,7 +251,9 @@ export class View2D {
                 const screenP = this.worldToScreen(x, pastState.y);
                 const halfH = (pastState.height / 2) * this.scale;
                 activeStripes.push({
+                    worldX: x,
                     sx: screenP.x,
+                    sy: screenP.y,
                     topY: screenP.y - halfH,
                     botY: screenP.y + halfH,
                     doorsOpen: pastState.doorsOpen
@@ -246,9 +261,31 @@ export class View2D {
             }
         }
 
-        // Если фигура видна в поле зрения
+        // Сохраняем точные данные для линейки измерения
+        if (shape.type === 'rod' || this.state.shapes[0] === shape) {
+            if (activeStripes.length > 0) {
+                const first = activeStripes[0];
+                const last = activeStripes[activeStripes.length - 1];
+                const obsLen = last.worldX - first.worldX;
+                this.currentMeasurement = {
+                    isVisible: true,
+                    minScreenX: first.sx,
+                    maxScreenX: last.sx,
+                    screenY: (first.topY + first.botY) / 2,
+                    observedLength: Math.max(1, obsLen),
+                    realLength: stateInstant.width,
+                    factor: stateInstant.width > 0 ? (obsLen / stateInstant.width) : 1
+                };
+            } else {
+                this.currentMeasurement = {
+                    isVisible: false,
+                    realLength: stateInstant.width
+                };
+            }
+        }
+
+        // Если фигура видна в поле зрения светового конуса
         if (activeStripes.length > 0) {
-            // Рисуем видимый контур искаженного стержня
             ctx.beginPath();
             // Верхняя граница слева направо
             ctx.moveTo(activeStripes[0].sx, activeStripes[0].topY);
@@ -353,57 +390,66 @@ export class View2D {
     }
 
     drawMeasurements(tCurr, obs, c) {
-        const shape = this.state.shapes.find(s => s.type === 'rod') || this.state.shapes[0];
-        if (!shape) return;
-
-        const measurement = SpacetimeMath.measureObservedRod(shape, obs.x, obs.y, tCurr, c);
-        if (!measurement) return;
-
+        const m = this.currentMeasurement;
+        const hudX = 20;
+        const hudY = this.height - 95;
         const ctx = this.ctx;
-        const sMin = this.worldToScreen(measurement.minX, 0);
-        const sMax = this.worldToScreen(measurement.maxX, 0);
-        const rulerY = sMin.y + 50;
 
         ctx.save();
-        // Линейка измерения под стержнем
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(sMin.x, rulerY);
-        ctx.lineTo(sMax.x, rulerY);
-        // Засечки
-        ctx.moveTo(sMin.x, rulerY - 6);
-        ctx.lineTo(sMin.x, rulerY + 6);
-        ctx.moveTo(sMax.x, rulerY - 6);
-        ctx.lineTo(sMax.x, rulerY + 6);
-        ctx.stroke();
-
-        // Плашка с данными (HUD)
-        const hudX = 20;
-        const hudY = this.height - 90;
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
         ctx.strokeStyle = '#334155';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.roundRect(hudX, hudY, 260, 70, 8);
+        ctx.roundRect(hudX, hudY, 280, 80, 8);
         ctx.fill();
+        ctx.stroke();
+
+        if (!m || !m.isVisible) {
+            // Стержень ещё за пределами светового горизонта!
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = '12px Inter, sans-serif';
+            ctx.fillText(`Истинная длина L₀: ${m ? Math.round(m.realLength) : 70} px`, hudX + 12, hudY + 24);
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = 'bold 12px Inter, sans-serif';
+            ctx.fillText(`Свет ещё не дошёл до наблюдателя`, hudX + 12, hudY + 46);
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '11px Inter, sans-serif';
+            ctx.fillText(`(Вне светового конуса, t_ret < 0)`, hudX + 12, hudY + 66);
+            ctx.restore();
+            return;
+        }
+
+        // Если виден: рисуем линейку в точности под видимым контуром
+        const rulerY = m.screenY + 24 * this.scale;
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(m.minScreenX, rulerY);
+        ctx.lineTo(m.maxScreenX, rulerY);
+        // Засечки
+        ctx.moveTo(m.minScreenX, rulerY - 5);
+        ctx.lineTo(m.minScreenX, rulerY + 5);
+        ctx.moveTo(m.maxScreenX, rulerY - 5);
+        ctx.lineTo(m.maxScreenX, rulerY + 5);
         ctx.stroke();
 
         ctx.fillStyle = '#f8fafc';
         ctx.font = '12px Inter, sans-serif';
-        ctx.fillText(`Истинная длина L₀: ${Math.round(measurement.realLength)} px`, hudX + 12, hudY + 22);
+        ctx.fillText(`Истинная длина L₀: ${Math.round(m.realLength)} px`, hudX + 12, hudY + 22);
 
         ctx.fillStyle = '#38bdf8';
         ctx.font = 'bold 13px Inter, sans-serif';
-        ctx.fillText(`Кажущаяся длина L: ${Math.round(measurement.observedLength)} px`, hudX + 12, hudY + 42);
+        ctx.fillText(`Кажущаяся длина L: ${Math.round(m.observedLength)} px`, hudX + 12, hudY + 43);
 
-        const factorText = measurement.factor.toFixed(2);
-        const factorColor = measurement.factor > 1.05 ? '#4ade80' : (measurement.factor < 0.95 ? '#f43f5e' : '#94a3b8');
-        const stateWord = measurement.factor > 1.05 ? 'РАСТЯЖЕНИЕ' : (measurement.factor < 0.95 ? 'СЖАТИЕ' : 'НОРМА');
+        const factorText = m.factor.toFixed(2);
+        const factorColor = m.factor > 1.05 ? '#4ade80' : (m.factor < 0.95 ? '#f43f5e' : '#94a3b8');
+        const stateWord = m.factor > 1.05 ? 'РАСТЯЖЕНИЕ' : (m.factor < 0.95 ? 'СЖАТИЕ' : 'НОРМА');
 
         ctx.fillStyle = factorColor;
         ctx.font = 'bold 12px Inter, sans-serif';
-        ctx.fillText(`Коэффициент k = ${factorText} (${stateWord})`, hudX + 12, hudY + 60);
+        ctx.fillText(`Коэффициент k = ${factorText} (${stateWord})`, hudX + 12, hudY + 64);
 
         ctx.restore();
     }
