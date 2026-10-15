@@ -26,14 +26,20 @@ export class AppState {
 
         // Настройки рендереров
         this.settings = {
-            layersCount: 36,        // Количество полупрозрачных слоёв-кадров в 3D
-            layersOpacity: 0.16,    // Прозрачность слоёв времени
-            showLayers: true,       // Отображать срезы времени
-            showWorldTubes: true,   // Отображать сплошные мировые трубки в 3D
-            showLightCone: true,    // Отображать 3D световой конус
-            view2DMode: 'both',     // 'retarded' (световой конус), 'instant' (синхронно), 'both' (наложение)
-            showMeasurement: true,  // Измерение кажущейся длины стержня
-            coneResolution: 32      // Детализация конуса
+            layersCount: 36,            // Количество слоёв-кадров в 3D
+            layersOpacity: 0.16,        // Базовая прозрачность
+            layerOpacityInside: 0.65,   // Прозрачность кадров внутри светового конуса
+            layerOpacityOutside: 0.05,  // Прозрачность кадров снаружи конуса
+            coneOpacity: 0.25,          // Прозрачность самого 3D-конуса
+            shapeOpacityInside: 0.95,   // Прозрачность фигур внутри конуса
+            shapeOpacityOutside: 0.12,  // Прозрачность фигур снаружи конуса
+            coneAngle: 45,              // Угол светового конуса (градусы, по умолчанию 45°)
+            showLayers: true,           // Отображать срезы времени
+            showWorldTubes: true,       // Отображать сплошные мировые трубки в 3D
+            showLightCone: true,        // Отображать 3D световой конус
+            view2DMode: 'both',         // 'retarded', 'instant', 'both'
+            showMeasurement: true,      // Измерение кажущейся длины стержня
+            coneResolution: 48          // Детализация конуса
         };
 
         // Объекты сцены

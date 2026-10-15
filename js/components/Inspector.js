@@ -85,7 +85,7 @@ export class Inspector {
             <div class="panel-section">
                 <h3 class="section-title">🌐 Вид 3D (Минковский)</h3>
                 <div class="control-row">
-                    <label>Слои времени:</label>
+                    <label>Слои времени (кадры):</label>
                     <div class="slider-val-group">
                         <input type="range" id="slider-layers-count" min="12" max="72" step="6" value="${this.state.settings.layersCount}">
                         <span id="val-layers-count" class="val-badge">${this.state.settings.layersCount}</span>
@@ -93,8 +93,35 @@ export class Inspector {
                 </div>
 
                 <div class="control-row">
-                    <label>Прозрачность слоев:</label>
-                    <input type="range" id="slider-layers-opacity" min="0.05" max="0.5" step="0.02" value="${this.state.settings.layersOpacity}">
+                    <label>Угол конуса:</label>
+                    <div class="slider-val-group">
+                        <input type="range" id="slider-cone-angle" min="25" max="65" step="5" value="${this.state.settings.coneAngle ?? 45}">
+                        <span id="val-cone-angle" class="val-badge">${this.state.settings.coneAngle ?? 45}°</span>
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <label>Прозрачность 3D-конуса:</label>
+                    <div class="slider-val-group">
+                        <input type="range" id="slider-cone-opacity" min="0.05" max="0.8" step="0.05" value="${this.state.settings.coneOpacity ?? 0.25}">
+                        <span id="val-cone-opacity" class="val-badge">${Math.round((this.state.settings.coneOpacity ?? 0.25) * 100)}%</span>
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <label>Кадр ВНУТРИ конуса (срез):</label>
+                    <div class="slider-val-group">
+                        <input type="range" id="slider-layer-inside" min="0.1" max="1.0" step="0.05" value="${this.state.settings.layerOpacityInside ?? 0.65}">
+                        <span id="val-layer-inside" class="val-badge">${Math.round((this.state.settings.layerOpacityInside ?? 0.65) * 100)}%</span>
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <label>Кадр СНАРУЖИ конуса:</label>
+                    <div class="slider-val-group">
+                        <input type="range" id="slider-layer-outside" min="0.0" max="0.3" step="0.02" value="${this.state.settings.layerOpacityOutside ?? 0.05}">
+                        <span id="val-layer-outside" class="val-badge">${Math.round((this.state.settings.layerOpacityOutside ?? 0.05) * 100)}%</span>
+                    </div>
                 </div>
 
                 <div class="control-checkbox-row">
@@ -137,10 +164,16 @@ export class Inspector {
             propVx: this.container.querySelector('#prop-shape-vx'),
             propW: this.container.querySelector('#prop-shape-w'),
             propH: this.container.querySelector('#prop-shape-h'),
-            btnDeleteShape: this.container.querySelector('#btn-delete-shape'),
             sliderLayersCount: this.container.querySelector('#slider-layers-count'),
             valLayersCount: this.container.querySelector('#val-layers-count'),
-            sliderLayersOpacity: this.container.querySelector('#slider-layers-opacity'),
+            sliderConeAngle: this.container.querySelector('#slider-cone-angle'),
+            valConeAngle: this.container.querySelector('#val-cone-angle'),
+            sliderConeOpacity: this.container.querySelector('#slider-cone-opacity'),
+            valConeOpacity: this.container.querySelector('#val-cone-opacity'),
+            sliderLayerInside: this.container.querySelector('#slider-layer-inside'),
+            valLayerInside: this.container.querySelector('#val-layer-inside'),
+            sliderLayerOutside: this.container.querySelector('#slider-layer-outside'),
+            valLayerOutside: this.container.querySelector('#val-layer-outside'),
             chkWorldTubes: this.container.querySelector('#chk-world-tubes'),
             chkLightCone: this.container.querySelector('#chk-light-cone'),
             select2DMode: this.container.querySelector('#select-2d-mode'),
@@ -233,8 +266,28 @@ export class Inspector {
             this.state.updateSetting('layersCount', val);
         });
 
-        this.dom.sliderLayersOpacity.addEventListener('input', (e) => {
-            this.state.updateSetting('layersOpacity', parseFloat(e.target.value));
+        this.dom.sliderConeAngle.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            this.dom.valConeAngle.textContent = `${val}°`;
+            this.state.updateSetting('coneAngle', val);
+        });
+
+        this.dom.sliderConeOpacity.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            this.dom.valConeOpacity.textContent = `${Math.round(val * 100)}%`;
+            this.state.updateSetting('coneOpacity', val);
+        });
+
+        this.dom.sliderLayerInside.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            this.dom.valLayerInside.textContent = `${Math.round(val * 100)}%`;
+            this.state.updateSetting('layerOpacityInside', val);
+        });
+
+        this.dom.sliderLayerOutside.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            this.dom.valLayerOutside.textContent = `${Math.round(val * 100)}%`;
+            this.state.updateSetting('layerOpacityOutside', val);
         });
 
         this.dom.chkWorldTubes.addEventListener('change', (e) => {

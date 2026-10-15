@@ -1,11 +1,93 @@
 /**
  * View3D.js
  * 3D-визуализация пространства-времени Минковского с помощью Three.js.
- * Ось Y — время t, горизонтальная плоскость XZ — 2D-пространство (x, y).
+ * Ось Y — время t, горизонтальная плоскость XZ — пространство (x, y).
+ * Вершина светового конуса находится в точке наблюдателя (вверху) и поднимается по таймлайну.
+ * Конус расширяется вниз в прошлое и динамически меняет прозрачность кадров внутри и снаружи.
  */
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// Шейдер для полупрозрачных плоскостей-кадров (срезов времени)
+const layerVertexShader = `
+varying vec2 vWorldXZ;
+void main() {
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldXZ = worldPos.xz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+`;
+
+const layerFragmentShader = `
+uniform vec2 uApexXZ;
+uniform float uConeRadius;
+uniform float uOpacityInside;
+uniform float uOpacityOutside;
+uniform vec3 uColorInside;
+uniform vec3 uColorOutside;
+uniform float uIsFuture;
+
+varying vec2 vWorldXZ;
+
+void main() {
+    if (uIsFuture > 0.5) {
+        gl_FragColor = vec4(uColorOutside, uOpacityOutside);
+        return;
+    }
+
+    float dist = distance(vWorldXZ, uApexXZ);
+
+    if (dist <= uConeRadius) {
+        // Внутри светового конуса: яркий кадр с высокой непрозрачностью
+        // Неоновое кольцо на границе среза светового конуса
+        float ring = smoothstep(3.5, 0.0, abs(dist - uConeRadius));
+        vec3 col = mix(uColorInside, vec3(0.15, 0.95, 1.0), ring * 0.85);
+        float alpha = mix(uOpacityInside, min(1.0, uOpacityInside + 0.35), ring);
+        gl_FragColor = vec4(col, alpha);
+    } else {
+        // Снаружи светового конуса: повышенная прозрачность
+        gl_FragColor = vec4(uColorOutside, uOpacityOutside);
+    }
+}
+`;
+
+// Шейдер для фигур на слоях времени
+const shapeVertexShader = `
+varying vec2 vWorldXZ;
+void main() {
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldXZ = worldPos.xz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+`;
+
+const shapeFragmentShader = `
+uniform vec2 uApexXZ;
+uniform float uConeRadius;
+uniform vec3 uBaseColor;
+uniform float uOpacityInside;
+uniform float uOpacityOutside;
+uniform float uIsFuture;
+
+varying vec2 vWorldXZ;
+
+void main() {
+    if (uIsFuture > 0.5) {
+        gl_FragColor = vec4(uBaseColor, uOpacityOutside);
+        return;
+    }
+
+    float dist = distance(vWorldXZ, uApexXZ);
+    float alpha = (dist <= uConeRadius) ? uOpacityInside : uOpacityOutside;
+
+    // Световой блик на границе среза
+    float ring = smoothstep(3.0, 0.0, abs(dist - uConeRadius));
+    vec3 col = mix(uBaseColor, vec3(1.0, 1.0, 1.0), ring * 0.4);
+
+    gl_FragColor = vec4(col, alpha);
+}
+`;
 
 export class View3D {
     constructor(containerElement, state) {
@@ -13,8 +95,11 @@ export class View3D {
         this.state = state;
 
         // Масштабы 3D-мира
-        this.spaceSize = 400;      // Размер пространства X и Z [-200, 200]
-        this.timeHeight = 320;     // Высота оси времени Y (t = 0 внизу, t = duration вверху)
+        this.spaceSize = 400;      // Пространство XZ [-200, 200]
+        this.timeHeight = 320;     // Высота оси времени Y [0, 320]
+
+        // Коллекция для быстрого обновления шейдеров каждого слоя
+        this.layersData = [];
 
         this.initScene();
         this.initStaticElements();
@@ -22,28 +107,25 @@ export class View3D {
     }
 
     initScene() {
-        // Сцена, камера и рендерер
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x0a0f1d); // Глубокий космический цвет
+        this.scene.background = new THREE.Color(0x070c18);
 
         const width = this.container.clientWidth || 800;
         const height = this.container.clientHeight || 600;
 
         this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 3000);
-        this.camera.position.set(380, 260, 420);
+        this.camera.position.set(380, 280, 420);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         this.renderer.setSize(width, height);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.container.appendChild(this.renderer.domElement);
 
-        // Управление камерой мышью
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
         this.controls.target.set(0, this.timeHeight / 2, 0);
 
-        // Освещение
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         this.scene.add(ambientLight);
 
@@ -51,7 +133,6 @@ export class View3D {
         dirLight.position.set(200, 400, 300);
         this.scene.add(dirLight);
 
-        // Группы для динамических объектов
         this.dynamicGroup = new THREE.Group();
         this.scene.add(this.dynamicGroup);
 
@@ -64,16 +145,16 @@ export class View3D {
 
     initStaticElements() {
         // Нижняя сетка пространства (t = 0)
-        const gridFloor = new THREE.GridHelper(this.spaceSize, 20, 0x38bdf8, 0x1e293b);
+        const gridFloor = new THREE.GridHelper(this.spaceSize, 20, 0x0284c7, 0x1e293b);
         gridFloor.position.y = 0;
         this.scene.add(gridFloor);
 
         // Верхняя сетка пространства (t = duration)
-        const gridCeil = new THREE.GridHelper(this.spaceSize, 20, 0x64748b, 0x1e293b);
+        const gridCeil = new THREE.GridHelper(this.spaceSize, 20, 0x475569, 0x111c30);
         gridCeil.position.y = this.timeHeight;
         this.scene.add(gridCeil);
 
-        // Вертикальные направляющие колонны (ось времени)
+        // Угловые направляющие колонны
         const corners = [
             [-this.spaceSize / 2, -this.spaceSize / 2],
             [this.spaceSize / 2, -this.spaceSize / 2],
@@ -87,28 +168,24 @@ export class View3D {
                 new THREE.Vector3(cx, this.timeHeight, cz)
             ];
             const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-            const lineMat = new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.6 });
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.5 });
             this.scene.add(new THREE.Line(lineGeo, lineMat));
         });
 
-        // Центральная ось времени (Time Arrow)
+        // Центральная стрела времени (Time Arrow)
         const axisPoints = [
             new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, this.timeHeight + 30, 0)
+            new THREE.Vector3(0, this.timeHeight + 35, 0)
         ];
         const axisGeo = new THREE.BufferGeometry().setFromPoints(axisPoints);
         const axisMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 });
         this.scene.add(new THREE.Line(axisGeo, axisMat));
 
-        // Стрелка на конце оси времени
-        const coneGeo = new THREE.ConeGeometry(5, 15, 16);
-        const coneMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
-        const arrowMesh = new THREE.Mesh(coneGeo, coneMat);
-        arrowMesh.position.set(0, this.timeHeight + 30, 0);
+        const arrowGeo = new THREE.ConeGeometry(5, 15, 16);
+        const arrowMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+        const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+        arrowMesh.position.set(0, this.timeHeight + 35, 0);
         this.scene.add(arrowMesh);
-
-        // Подпись оси времени
-        this.timeArrow = arrowMesh;
     }
 
     bindEvents() {
@@ -133,19 +210,10 @@ export class View3D {
         this.renderer.setSize(width, height);
     }
 
-    /**
-     * Преобразование физических координат (x, y, t) в 3D координаты Three.js:
-     * Three.X = x
-     * Three.Y = (t / duration) * timeHeight
-     * Three.Z = y
-     */
     timeToY(t) {
         return (t / this.state.duration) * this.timeHeight;
     }
 
-    /**
-     * Полная пересборка статических слоев и мировых трубок
-     */
     rebuildGeometry() {
         this.buildLayers();
         this.buildWorldTubes();
@@ -153,34 +221,49 @@ export class View3D {
     }
 
     /**
-     * Построение стопки полупрозрачных слоёв-кадров времени
+     * Построение стопки полупрозрачных слоёв времени со специализированными шейдерами
      */
     buildLayers() {
-        // Очищаем предыдущие слои
         while (this.layersGroup.children.length > 0) {
             const obj = this.layersGroup.children[0];
             this.layersGroup.remove(obj);
             if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) obj.material.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                else obj.material.dispose();
+            }
         }
 
+        this.layersData = [];
         if (!this.state.settings.showLayers) return;
 
         const count = this.state.settings.layersCount;
-        const opacity = this.state.settings.layersOpacity;
+        const optInside = this.state.settings.layerOpacityInside ?? 0.65;
+        const optOutside = this.state.settings.layerOpacityOutside ?? 0.05;
 
         for (let i = 0; i < count; i++) {
             const t = (i / (count - 1)) * this.state.duration;
             const yPos = this.timeToY(t);
 
-            // Полупрозрачная плоскость среза времени
-            const planeGeo = new THREE.PlaneGeometry(this.spaceSize, this.spaceSize);
-            planeGeo.rotateX(-Math.PI / 2); // Горизонтальная плоскость XZ
+            // Шейдерный материал плоскости слоя
+            const planeUniforms = {
+                uApexXZ: { value: new THREE.Vector2(this.state.observer.x, this.state.observer.y) },
+                uConeRadius: { value: 0.0 },
+                uOpacityInside: { value: optInside },
+                uOpacityOutside: { value: optOutside },
+                uColorInside: { value: new THREE.Color(0x133863) }, // Синий оттенок внутри конуса
+                uColorOutside: { value: new THREE.Color(0x0e172a) }, // Тёмный снаружи
+                uIsFuture: { value: 0.0 }
+            };
 
-            const planeMat = new THREE.MeshBasicMaterial({
-                color: 0x1e3a5f,
+            const planeGeo = new THREE.PlaneGeometry(this.spaceSize, this.spaceSize);
+            planeGeo.rotateX(-Math.PI / 2);
+
+            const planeMat = new THREE.ShaderMaterial({
+                vertexShader: layerVertexShader,
+                fragmentShader: layerFragmentShader,
+                uniforms: planeUniforms,
                 transparent: true,
-                opacity: opacity * 0.4,
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
@@ -189,40 +272,59 @@ export class View3D {
             planeMesh.position.y = yPos;
             this.layersGroup.add(planeMesh);
 
-            // Контур плоскости (рамка кадра)
+            // Контур рамки кадра
             const edgesGeo = new THREE.EdgesGeometry(planeGeo);
             const edgesMat = new THREE.LineBasicMaterial({
                 color: 0x38bdf8,
                 transparent: true,
-                opacity: opacity * 0.9
+                opacity: Math.max(0.04, optOutside * 1.5)
             });
             const frameLine = new THREE.LineSegments(edgesGeo, edgesMat);
             frameLine.position.y = yPos;
             this.layersGroup.add(frameLine);
 
-            // Отрисовка фигур на данном слое времени
+            // Фигуры на данном слое
+            const shapeMeshes = [];
             this.state.shapes.forEach(shape => {
-                const stateAtT = shape.getStateAt(t);
-                const shapeGeo = new THREE.PlaneGeometry(stateAtT.width, stateAtT.height);
+                const s = shape.getStateAt(t);
+                const shapeGeo = new THREE.PlaneGeometry(s.width, s.height);
                 shapeGeo.rotateX(-Math.PI / 2);
 
-                const shapeMat = new THREE.MeshBasicMaterial({
-                    color: new THREE.Color(shape.color),
+                const shapeUniforms = {
+                    uApexXZ: { value: new THREE.Vector2(this.state.observer.x, this.state.observer.y) },
+                    uConeRadius: { value: 0.0 },
+                    uBaseColor: { value: new THREE.Color(shape.color) },
+                    uOpacityInside: { value: this.state.settings.shapeOpacityInside ?? 0.95 },
+                    uOpacityOutside: { value: this.state.settings.shapeOpacityOutside ?? 0.12 },
+                    uIsFuture: { value: 0.0 }
+                };
+
+                const shapeMat = new THREE.ShaderMaterial({
+                    vertexShader: shapeVertexShader,
+                    fragmentShader: shapeFragmentShader,
+                    uniforms: shapeUniforms,
                     transparent: true,
-                    opacity: 0.75,
                     side: THREE.DoubleSide
                 });
 
                 const shapeMesh = new THREE.Mesh(shapeGeo, shapeMat);
-                // Three.X = x, Three.Z = y
-                shapeMesh.position.set(stateAtT.x, yPos + 0.1, stateAtT.y);
+                shapeMesh.position.set(s.x, yPos + 0.1, s.y);
                 this.layersGroup.add(shapeMesh);
+
+                shapeMeshes.push({ mesh: shapeMesh, uniforms: shapeUniforms });
+            });
+
+            this.layersData.push({
+                yPos,
+                t,
+                planeUniforms,
+                shapeMeshes
             });
         }
     }
 
     /**
-     * Построение сплошных мировых трубок (World-tubes) в 3D
+     * Построение непрерывных мировых трубок (World-tubes)
      */
     buildWorldTubes() {
         while (this.tubesGroup.children.length > 0) {
@@ -234,19 +336,17 @@ export class View3D {
 
         if (!this.state.settings.showWorldTubes) return;
 
-        const steps = 60; // Количество шагов дискретизации вдоль времени
+        const steps = 60;
         const dt = this.state.duration / steps;
 
         this.state.shapes.forEach(shape => {
-            // Строим экструдированную ленту мировых линий 4-х углов прямоугольника
-            const cornersIndices = [
+            const corners = [
                 [-0.5, -0.5],
                 [0.5, -0.5],
                 [0.5, 0.5],
                 [-0.5, 0.5]
             ];
 
-            // Создаем меш боковых граней мировой трубки
             const vertices = [];
             const indices = [];
 
@@ -255,28 +355,18 @@ export class View3D {
                 const yPos = this.timeToY(t);
                 const s = shape.getStateAt(t);
 
-                // 4 вершины на высоте yPos
-                cornersIndices.forEach(([sx, sz]) => {
-                    const vx = s.x + sx * s.width;
-                    const vz = s.y + sz * s.height;
-                    vertices.push(vx, yPos, vz);
+                corners.forEach(([sx, sz]) => {
+                    vertices.push(s.x + sx * s.width, yPos, s.y + sz * s.height);
                 });
 
-                // Треугольники между текущим шагом и предыдущим
                 if (step > 0) {
                     const prevRow = (step - 1) * 4;
                     const currRow = step * 4;
 
                     for (let c = 0; c < 4; c++) {
                         const nextC = (c + 1) % 4;
-                        const p1 = prevRow + c;
-                        const p2 = prevRow + nextC;
-                        const p3 = currRow + c;
-                        const p4 = currRow + nextC;
-
-                        // 2 треугольника на каждую боковую грань
-                        indices.push(p1, p3, p2);
-                        indices.push(p2, p3, p4);
+                        indices.push(prevRow + c, currRow + c, prevRow + nextC);
+                        indices.push(prevRow + nextC, currRow + c, currRow + nextC);
                     }
                 }
             }
@@ -289,30 +379,21 @@ export class View3D {
             const tubeMat = new THREE.MeshPhongMaterial({
                 color: new THREE.Color(shape.color),
                 transparent: true,
-                opacity: 0.35,
+                opacity: 0.28,
                 side: THREE.DoubleSide,
-                shininess: 60
+                shininess: 40
             });
 
             const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
             this.tubesGroup.add(tubeMesh);
-
-            // Добавляем каркасные ребра для четкости
-            const wireframeMat = new THREE.MeshBasicMaterial({
-                color: new THREE.Color(shape.color),
-                wireframe: true,
-                transparent: true,
-                opacity: 0.2
-            });
-            this.tubesGroup.add(new THREE.Mesh(tubeGeo, wireframeMat));
         });
     }
 
     /**
      * Обновление динамических элементов:
-     * - Световой конус прошлого
-     * - Текущий плоскостной срез времени (лазерная плоскость)
-     * - Положение наблюдателя
+     * 1. Вершина светового конуса поднимается вверх по оси Y (время t).
+     * 2. Конус направлен ВНИЗ в прошлое (apex вверху, base внизу).
+     * 3. Каждый кадр под конусом динамически обновляет радиус среза и прозрачность.
      */
     updateScene() {
         while (this.dynamicGroup.children.length > 0) {
@@ -323,30 +404,40 @@ export class View3D {
         }
 
         const tCurr = this.state.currentTime;
-        const currentY = this.timeToY(tCurr);
+        const currentY = this.timeToY(tCurr); // Позиция вершины по высоте оси времени
         const obs = this.state.observer;
-        const c = this.state.speedOfLight;
 
-        // 1. Текущий срез времени (активная плоскость времени)
-        const activePlaneGeo = new THREE.PlaneGeometry(this.spaceSize, this.spaceSize);
-        activePlaneGeo.rotateX(-Math.PI / 2);
-        const activePlaneMat = new THREE.MeshBasicMaterial({
-            color: 0x06b6d4, // Циановый лазер
-            transparent: true,
-            opacity: 0.15,
-            side: THREE.DoubleSide,
-            depthWrite: false
+        // Расчет угла светового конуса (по умолчанию 45°, tan(45°) = 1.0)
+        const coneAngleDeg = this.state.settings.coneAngle ?? 45;
+        const coneSlope = Math.tan(coneAngleDeg * (Math.PI / 180));
+
+        const optInside = this.state.settings.layerOpacityInside ?? 0.65;
+        const optOutside = this.state.settings.layerOpacityOutside ?? 0.05;
+        const coneOpacity = this.state.settings.coneOpacity ?? 0.25;
+
+        // 1. Обновляем шейдеры всех слоёв времени
+        this.layersData.forEach(layer => {
+            const isFuture = layer.yPos > currentY;
+            // Глубина времени от вершины вниз до данного слоя
+            const deltaY = currentY - layer.yPos;
+            const radiusAtLayer = (!isFuture && deltaY >= 0) ? (deltaY * coneSlope) : 0.0;
+
+            // Обновляем униформы плоскости слоя
+            layer.planeUniforms.uApexXZ.value.set(obs.x, obs.y);
+            layer.planeUniforms.uConeRadius.value = radiusAtLayer;
+            layer.planeUniforms.uOpacityInside.value = optInside;
+            layer.planeUniforms.uOpacityOutside.value = optOutside;
+            layer.planeUniforms.uIsFuture.value = isFuture ? 1.0 : 0.0;
+
+            // Обновляем униформы фигур на этом слое
+            layer.shapeMeshes.forEach(sm => {
+                sm.uniforms.uApexXZ.value.set(obs.x, obs.y);
+                sm.uniforms.uConeRadius.value = radiusAtLayer;
+                sm.uniforms.uOpacityInside.value = this.state.settings.shapeOpacityInside ?? 0.95;
+                sm.uniforms.uOpacityOutside.value = this.state.settings.shapeOpacityOutside ?? 0.12;
+                sm.uniforms.uIsFuture.value = isFuture ? 1.0 : 0.0;
+            });
         });
-        const activePlaneMesh = new THREE.Mesh(activePlaneGeo, activePlaneMat);
-        activePlaneMesh.position.y = currentY;
-        this.dynamicGroup.add(activePlaneMesh);
-
-        // Рамка активного среза
-        const edgesGeo = new THREE.EdgesGeometry(activePlaneGeo);
-        const edgesMat = new THREE.LineBasicMaterial({ color: 0x22d3ee, linewidth: 2 });
-        const activeEdges = new THREE.LineSegments(edgesGeo, edgesMat);
-        activeEdges.position.y = currentY;
-        this.dynamicGroup.add(activeEdges);
 
         // 2. Линия жизни наблюдателя (Observer Worldline)
         const obsLinePoints = [
@@ -364,61 +455,66 @@ export class View3D {
         obsLine.computeLineDistances();
         this.dynamicGroup.add(obsLine);
 
-        // Сфера наблюдателя в текущий момент времени ("Здесь и сейчас")
-        const obsSphereGeo = new THREE.SphereGeometry(6, 16, 16);
-        const obsSphereMat = new THREE.MeshStandardMaterial({
+        // 3. Вершина конуса — точка наблюдателя "Здесь и сейчас"
+        const apexSphereGeo = new THREE.SphereGeometry(5, 16, 16);
+        const apexSphereMat = new THREE.MeshStandardMaterial({
             color: 0xfacc15,
             emissive: 0xeab308,
-            emissiveIntensity: 0.8
+            emissiveIntensity: 0.9
         });
-        const obsSphere = new THREE.Mesh(obsSphereGeo, obsSphereMat);
-        obsSphere.position.set(obs.x, currentY, obs.y);
-        this.dynamicGroup.add(obsSphere);
+        const apexSphere = new THREE.Mesh(apexSphereGeo, apexSphereMat);
+        apexSphere.position.set(obs.x, currentY, obs.y);
+        this.dynamicGroup.add(apexSphere);
 
-        // 3. 3D Световой конус прошлого (Past Light Cone)
-        if (this.state.settings.showLightCone && tCurr > 0.05) {
-            // Высота конуса от t = 0 до t = tCurr
+        // 4. Световой конус прошлого (Past Light Cone)
+        // ВАЖНО:
+        // Вершина конуса находится вверху на высоте currentY.
+        // Основание конуса находится внизу на высоте 0 (t = 0).
+        // В Three.js ConeGeometry вершина находится в (+height/2), основание в (-height/2).
+        // Поэтому без поворота:
+        // Высота coneHeight = currentY
+        // Центр меша: Y = currentY / 2
+        // Тогда вершина (+height/2) будет на: currentY / 2 + currentY / 2 = currentY (ВВЕРХУ!)
+        // Основание (-height/2) будет на: currentY / 2 - currentY / 2 = 0 (ВНИЗУ!)
+        if (this.state.settings.showLightCone && currentY > 1.0) {
             const coneHeight = currentY;
-            // Радиус конуса на уровне пола (t = 0, dt = tCurr)
-            const baseRadius = c * tCurr;
+            const baseRadius = coneHeight * coneSlope; // Радиус на плоскости t = 0
 
-            // В Three.js ConeGeometry строится с вершиной вверху (+Y) и основанием внизу (-Y).
-            // Чтобы конус прошлого расширялся вниз (в прошлое), переворачиваем его вверх ногами!
+            // Создаем геометрию конуса (apex вверху, base внизу, открытое дно)
             const coneGeo = new THREE.ConeGeometry(baseRadius, coneHeight, 48, 1, true);
-            coneGeo.rotateX(Math.PI); // Переворачиваем вершиной вверх
 
             const coneMat = new THREE.MeshPhongMaterial({
-                color: 0x00f5ff, // Неоновый циан
+                color: 0x00f5ff,
                 transparent: true,
-                opacity: 0.28,
+                opacity: coneOpacity,
                 side: THREE.DoubleSide,
                 depthWrite: false,
                 shininess: 90
             });
 
             const coneMesh = new THREE.Mesh(coneGeo, coneMat);
-            // Вершина конуса должна быть в (obs.x, currentY, obs.y)
-            // Центр конуса высотой coneHeight находится на currentY - coneHeight/2
-            coneMesh.position.set(obs.x, currentY - coneHeight / 2, obs.y);
+            coneMesh.position.set(obs.x, currentY / 2, obs.y);
             this.dynamicGroup.add(coneMesh);
 
-            // Каркас светового конуса для красивой графики
+            // Каркас конуса
             const wireConeMat = new THREE.MeshBasicMaterial({
                 color: 0x38bdf8,
                 wireframe: true,
                 transparent: true,
-                opacity: 0.25
+                opacity: coneOpacity * 0.8
             });
             const wireConeMesh = new THREE.Mesh(coneGeo, wireConeMat);
             wireConeMesh.position.copy(coneMesh.position);
             this.dynamicGroup.add(wireConeMesh);
 
-            // Круг основания светового конуса на плоскости t = 0
+            // Нижнее кольцо среза на плоскости t = 0
             const ringGeo = new THREE.RingGeometry(baseRadius - 1.5, baseRadius + 1.5, 64);
             ringGeo.rotateX(-Math.PI / 2);
             const ringMat = new THREE.MeshBasicMaterial({
                 color: 0x00f5ff,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.8
             });
             const ringMesh = new THREE.Mesh(ringGeo, ringMat);
             ringMesh.position.set(obs.x, 0.2, obs.y);
@@ -426,9 +522,6 @@ export class View3D {
         }
     }
 
-    /**
-     * Основной цикл анимации Three.js
-     */
     startRenderLoop() {
         const animate = () => {
             requestAnimationFrame(animate);
