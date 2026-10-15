@@ -597,11 +597,16 @@ export class ViewEditor {
         const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
         const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
 
+        // Для удобства выбора учитываем как сжатый размер, так и область покоя L0
+        const hitW = Math.max(s.width, (s.restWidth || s.width));
+        const hitH = Math.max(s.height, (s.restHeight || s.height));
+
         if (s.type === 'circle') {
-            const r = (s.width + s.height) / 4;
-            return (localX * localX + localY * localY) <= r * r;
+            const rx = hitW / 2;
+            const ry = hitH / 2;
+            return ((localX * localX) / (rx * rx) + (localY * localY) / (ry * ry)) <= 1.0;
         } else {
-            return Math.abs(localX) <= s.width / 2 && Math.abs(localY) <= s.height / 2;
+            return Math.abs(localX) <= hitW / 2 && Math.abs(localY) <= hitH / 2;
         }
     }
 
@@ -726,15 +731,37 @@ export class ViewEditor {
 
         const w = s.width * this.scale;
         const h = s.height * this.scale;
+        const restW = (s.restWidth || s.width) * this.scale;
+        const restH = (s.restHeight || s.height) * this.scale;
+
+        // Если фигура движется с околосветовой скоростью и сжата:
+        // Рисуем пунктирный контур собственной длины L0 (покоя)
+        if (s.lorentzFactor < 0.999) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            if (s.type === 'circle') {
+                const rxRest = restW / 2;
+                const ryRest = restH / 2;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, rxRest, ryRest, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            } else {
+                ctx.strokeRect(-restW / 2, -restH / 2, restW, restH);
+            }
+            ctx.restore();
+        }
 
         ctx.fillStyle = s.color || shape.color;
         ctx.strokeStyle = isSelected ? '#38bdf8' : (s.strokeColor || '#ffffff');
         ctx.lineWidth = isSelected ? 3 : (s.strokeWidth || 2);
 
         if (s.type === 'circle') {
-            const r = Math.max(w, h) / 2;
+            const rx = w / 2;
+            const ry = h / 2;
             ctx.beginPath();
-            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.ellipse(0, 0, Math.max(2, rx), ry, 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
 
@@ -743,10 +770,10 @@ export class ViewEditor {
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             ctx.moveTo(0, 0);
-            ctx.lineTo(r, 0);
+            ctx.lineTo(rx, 0);
             ctx.stroke();
         } else {
-            // Прямоугольник
+            // Прямоугольник (лоренцево сжатый)
             ctx.beginPath();
             ctx.roundRect(-w / 2, -h / 2, w, h, 4);
             ctx.fill();
@@ -757,11 +784,11 @@ export class ViewEditor {
 
         // Отрисовка манипуляторов выделения
         if (isSelected) {
-            this.drawHandles(s, center, rad, w, h);
+            this.drawHandles(s, center, rad, w, h, restW, restH);
         }
     }
 
-    drawHandles(s, center, rad, w, h) {
+    drawHandles(s, center, rad, w, h, restW = w, restH = h) {
         const ctx = this.ctx;
 
         // 1. Ручка вращения: линия и шарик
@@ -816,6 +843,27 @@ export class ViewEditor {
         ctx.moveTo(pivotScreen.x, pivotScreen.y - 8);
         ctx.lineTo(pivotScreen.x, pivotScreen.y + 8);
         ctx.stroke();
+
+        // 3. Информационный бейдж сжатия (если скорость заметная)
+        if (s.lorentzFactor < 0.999) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(14, 23, 42, 0.9)';
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 1;
+            const tagText = `L: ${Math.round(s.width)}px (L₀: ${Math.round(s.restWidth)}px, ${(s.lorentzFactor * 100).toFixed(0)}%)`;
+            ctx.font = '10px Inter, monospace';
+            const tw = ctx.measureText(tagText).width;
+            const tagX = center.x - tw / 2 - 6;
+            const tagY = center.y + (h / 2) + 14 * this.scale;
+            ctx.beginPath();
+            ctx.roundRect(tagX, tagY, tw + 12, 18, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillText(tagText, tagX + 6, tagY + 13);
+            ctx.restore();
+        }
     }
 
     drawDrawingPreview() {

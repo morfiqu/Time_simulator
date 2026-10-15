@@ -205,9 +205,10 @@ export class View2D {
             ctx.fillStyle = hexToRgba(col, 0.15);
 
             if (state.type === 'circle') {
-                const r = Math.max(w, h) / 2;
+                const rx = w / 2;
+                const ry = h / 2;
                 ctx.beginPath();
-                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.ellipse(0, 0, Math.max(2, rx), ry, 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
             } else {
@@ -218,16 +219,20 @@ export class View2D {
             // Текстовая метка "Истина (Sync)" цвета объекта
             ctx.fillStyle = hexToRgba(col, 0.9);
             ctx.font = '10px Inter, sans-serif';
-            ctx.fillText('Истинное ' + Math.round(state.x), -w / 2, -h / 2 - 5);
+            const labelText = state.lorentzFactor < 0.999 
+                ? `Истина L=${Math.round(state.width)} (L₀=${Math.round(state.restWidth || state.width)})` 
+                : `Истинное ${Math.round(state.x)}`;
+            ctx.fillText(labelText, -w / 2, -h / 2 - 5);
         } else {
             ctx.fillStyle = col;
             ctx.strokeStyle = state.strokeColor || '#ffffff';
             ctx.lineWidth = state.strokeWidth || 1;
 
             if (state.type === 'circle') {
-                const r = Math.max(w, h) / 2;
+                const rx = w / 2;
+                const ry = h / 2;
                 ctx.beginPath();
-                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.ellipse(0, 0, Math.max(2, rx), ry, 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
             } else {
@@ -284,9 +289,10 @@ export class View2D {
             ctx.shadowBlur = 10;
 
             if (shape.type === 'circle') {
-                const r = Math.max(w, h) / 2;
+                const rx = w / 2;
+                const ry = h / 2;
                 ctx.beginPath();
-                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.ellipse(0, 0, Math.max(2, rx), ry, 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
             } else {
@@ -347,12 +353,15 @@ export class View2D {
                     screenY: (first.topY + first.botY) / 2,
                     observedLength: Math.max(1, obsLen),
                     realLength: stateInstant.width,
+                    restLength: stateInstant.restWidth || stateInstant.width,
+                    lorentzFactor: stateInstant.lorentzFactor || 1,
                     factor: stateInstant.width > 0 ? (obsLen / stateInstant.width) : 1
                 };
             } else {
                 this.currentMeasurement = {
                     isVisible: false,
-                    realLength: stateInstant.width
+                    realLength: stateInstant.width,
+                    restLength: stateInstant.restWidth || stateInstant.width
                 };
             }
         }
@@ -523,21 +532,25 @@ export class View2D {
         ctx.lineTo(m.maxScreenX, rulerY + 5);
         ctx.stroke();
 
+        const restLen = m.restLength || m.realLength;
+        const labLen = m.realLength;
+        const obsLen = m.observedLength;
+
         ctx.fillStyle = '#f8fafc';
-        ctx.font = '12px Inter, sans-serif';
-        ctx.fillText(`Истинная длина L₀: ${Math.round(m.realLength)} px`, hudX + 12, hudY + 22);
+        ctx.font = '11px Inter, sans-serif';
+        ctx.fillText(`Собств. L₀: ${Math.round(restLen)} px ➔ В ИСО L_лаб: ${Math.round(labLen)} px`, hudX + 12, hudY + 22);
 
         ctx.fillStyle = '#38bdf8';
         ctx.font = 'bold 13px Inter, sans-serif';
-        ctx.fillText(`Кажущаяся длина L: ${Math.round(m.observedLength)} px`, hudX + 12, hudY + 43);
+        ctx.fillText(`Видимая глазом L_вид: ${Math.round(obsLen)} px`, hudX + 12, hudY + 43);
 
         const factorText = m.factor.toFixed(2);
         const factorColor = m.factor > 1.05 ? '#4ade80' : (m.factor < 0.95 ? '#f43f5e' : '#94a3b8');
-        const stateWord = m.factor > 1.05 ? 'РАСТЯЖЕНИЕ' : (m.factor < 0.95 ? 'СЖАТИЕ' : 'НОРМА');
+        const stateWord = m.factor > 1.05 ? 'ОПТИЧ. РАСТЯЖЕНИЕ' : (m.factor < 0.95 ? 'ОПТИЧ. СЖАТИЕ' : 'НОРМА');
 
         ctx.fillStyle = factorColor;
-        ctx.font = 'bold 12px Inter, sans-serif';
-        ctx.fillText(`Коэффициент k = ${factorText} (${stateWord})`, hudX + 12, hudY + 64);
+        ctx.font = 'bold 11px Inter, sans-serif';
+        ctx.fillText(`k_вид = ${factorText} (${stateWord}) | γ = ${(restLen / Math.max(1, labLen)).toFixed(2)}`, hudX + 12, hudY + 64);
 
         ctx.restore();
     }

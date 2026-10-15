@@ -52,6 +52,7 @@ export class AppState {
             bg3DColor: '#070c18',       // Цвет фона 3D сцены
             view2DMode: 'both',         // 'retarded', 'instant', 'both'
             showMeasurement: true,      // Измерение кажущейся длины стержня
+            lorentzContraction: true,   // Релятивистское лоренцево сокращение длины (L = L0 * sqrt(1 - beta^2))
             coneResolution: 48          // Детализация конуса
         };
 

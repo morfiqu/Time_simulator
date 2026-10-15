@@ -5,6 +5,7 @@
  */
 
 import { LorentzDiagram } from './LorentzDiagram.js';
+import { ShapeModel } from '../core/ShapeModel.js';
 
 export class Inspector {
     constructor(containerElement, state) {
@@ -50,6 +51,12 @@ export class Inspector {
             <div class="panel-section">
                 <h3 class="section-title">📐 Лоренцево сжатие (4-скорость)</h3>
                 <div id="lorentz-diagram-box"></div>
+                <div class="control-checkbox-row" style="margin-top: 10px; background: rgba(56, 189, 248, 0.08); padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2);">
+                    <label style="cursor: pointer; font-size: 11px; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="chk-lorentz-contraction" ${this.state.settings.lorentzContraction ? 'checked' : ''}>
+                        Реальное сжатие тел (L = L₀ / γ)
+                    </label>
+                </div>
             </div>
 
             <div class="panel-section">
@@ -159,7 +166,8 @@ export class Inspector {
             chkWorldTubes: this.container.querySelector('#chk-world-tubes'),
             chkLightCone: this.container.querySelector('#chk-light-cone'),
             select2DMode: this.container.querySelector('#select-2d-mode'),
-            chkMeasurement: this.container.querySelector('#chk-measurement')
+            chkMeasurement: this.container.querySelector('#chk-measurement'),
+            chkLorentzContraction: this.container.querySelector('#chk-lorentz-contraction')
         };
     }
 
@@ -236,6 +244,14 @@ export class Inspector {
         this.dom.chkMeasurement.addEventListener('change', (e) => {
             this.state.updateSetting('showMeasurement', e.target.checked);
         });
+
+        if (this.dom.chkLorentzContraction) {
+            this.dom.chkLorentzContraction.addEventListener('change', (e) => {
+                ShapeModel.lorentzEnabled = e.target.checked;
+                this.state.updateSetting('lorentzContraction', e.target.checked);
+                this.state.emit('shapesUpdated', this.state.shapes);
+            });
+        }
 
         // Слушатели событий состояния
         this.state.on('settingsChanged', () => {

@@ -98,20 +98,44 @@ export class ShapeModel {
     getStateAt(t, customC = null) {
         const c = (customC !== null && customC > 0) ? customC : this.speedOfLight;
 
-        // Если заданы ключевые кадры, интерполируем параметры между ними
-        if (this.keyframes && this.keyframes.length > 0) {
-            return this._interpolateKeyframes(t);
+        // Если заданы ключевые кадры (больше 1), интерполируем параметры между ними
+        if (this.keyframes && this.keyframes.length > 1) {
+            return this._interpolateKeyframes(t, c);
+        }
+
+        let x0 = this.x0;
+        let y0 = this.y0;
+        let rot = this.rotation;
+        let pX = this.pivotX;
+        let pY = this.pivotY;
+        let baseW = this.width;
+        let baseH = this.height;
+        let color = this.color;
+        let strokeColor = this.strokeColor;
+        let strokeWidth = this.strokeWidth;
+        let doorsOpen = true;
+
+        if (this.keyframes && this.keyframes.length === 1) {
+            const k0 = this.keyframes[0];
+            x0 = k0.x ?? x0;
+            y0 = k0.y ?? y0;
+            rot = k0.rotation ?? rot;
+            pX = k0.pivotX ?? pX;
+            pY = k0.pivotY ?? pY;
+            baseW = k0.width ?? baseW;
+            baseH = k0.height ?? baseH;
+            color = k0.color ?? color;
+            strokeColor = k0.strokeColor ?? strokeColor;
+            strokeWidth = k0.strokeWidth ?? strokeWidth;
+            doorsOpen = k0.doorsOpen ?? doorsOpen;
         }
 
         // Движение по постоянной скорости: x(t) = x0 + (beta * c) * t
-        const currentVx = this.betaX * c;
-        const currentVy = this.betaY * c;
+        const currentVx = (this.betaX || 0) * c;
+        const currentVy = (this.betaY || 0) * c;
 
-        const xBase = this.x0 + currentVx * t;
-        const yBase = this.y0 + currentVy * t;
-        const rot = this.rotation;
-        const pX = this.pivotX;
-        const pY = this.pivotY;
+        const xBase = x0 + currentVx * t;
+        const yBase = y0 + currentVy * t;
 
         // Расчет мировой позиции с учетом смещения пивота и вращения (орбита)
         const pivotWorldX = xBase + pX;
@@ -124,10 +148,23 @@ export class ShapeModel {
         const finalX = pivotWorldX + rotDx;
         const finalY = pivotWorldY + rotDy;
 
-        let doorsOpen = true;
         if (this.type === 'barn') {
             doorsOpen = (t < this.doorsCloseTime || t > this.doorsOpenTime);
         }
+
+        // Релятивистский расчет сокращения длины (Lorentz Contraction)
+        const betaX = this.betaX ?? 0;
+        const betaY = this.betaY ?? 0;
+        const betaMag = Math.min(0.999, Math.hypot(betaX, betaY));
+        const lorentzFactor = Math.sqrt(Math.max(0.001, 1 - betaMag * betaMag)); // 1 / gamma
+        const gamma = 1 / lorentzFactor;
+
+        const isLorentz = ShapeModel.lorentzEnabled && (this.lorentzContraction ?? true);
+        const k = isLorentz ? lorentzFactor : 1.0;
+
+        // Сжатие вдоль оси движения (по умолчанию вдоль длины/оси X)
+        const contractedW = Math.max(2, baseW * k);
+        const contractedH = baseH;
 
         return {
             x: finalX,
@@ -139,35 +176,49 @@ export class ShapeModel {
             pivotWorldX,
             pivotWorldY,
             rotation: rot,
-            width: this.width,
-            height: this.height,
-            radius: Math.max(this.width, this.height) / 2,
-            color: this.color,
-            strokeColor: this.strokeColor,
-            strokeWidth: this.strokeWidth,
+            width: contractedW,
+            height: contractedH,
+            restWidth: baseW,
+            restHeight: baseH,
+            radius: Math.max(contractedW, contractedH) / 2,
+            restRadius: Math.max(baseW, baseH) / 2,
+            color,
+            strokeColor,
+            strokeWidth,
             type: this.type,
             doorsOpen,
             vx: currentVx,
-            vy: currentVy
+            vy: currentVy,
+            beta: betaMag,
+            betaX,
+            betaY,
+            lorentzFactor: k,
+            gamma
         };
     }
 
-    _interpolateKeyframes(t) {
+    _interpolateKeyframes(t, c = this.speedOfLight) {
         if (!this.keyframes || this.keyframes.length === 0) {
-            return this.getStateAt(0);
+            return this.getStateAt(0, c);
         }
 
         let k1, k2, alpha;
+        let vX_kf = 0;
+        let vY_kf = 0;
 
         if (this.keyframes.length === 1 || t <= this.keyframes[0].time) {
             k1 = this.keyframes[0];
             k2 = this.keyframes[0];
             alpha = 0;
+            vX_kf = (this.betaX || 0) * c;
+            vY_kf = (this.betaY || 0) * c;
         } else if (t >= this.keyframes[this.keyframes.length - 1].time) {
             const last = this.keyframes[this.keyframes.length - 1];
             k1 = last;
             k2 = last;
             alpha = 1;
+            vX_kf = (this.betaX || 0) * c;
+            vY_kf = (this.betaY || 0) * c;
         } else {
             for (let i = 0; i < this.keyframes.length - 1; i++) {
                 if (t >= this.keyframes[i].time && t <= this.keyframes[i + 1].time) {
@@ -175,18 +226,39 @@ export class ShapeModel {
                     k2 = this.keyframes[i + 1];
                     const range = k2.time - k1.time;
                     alpha = range > 0 ? (t - k1.time) / range : 0;
+                    if (range > 0.001) {
+                        vX_kf = (k2.x - k1.x) / range;
+                        vY_kf = (k2.y - k1.y) / range;
+                    }
                     break;
                 }
             }
         }
 
-        const xBase = k1.x + (k2.x - k1.x) * alpha;
-        const yBase = k1.y + (k2.y - k1.y) * alpha;
+        // Если ключевые кадры не задают перемещения, используем betaX
+        let currentVx = vX_kf;
+        let currentVy = vY_kf;
+        if (Math.abs(vX_kf) < 0.001 && Math.abs(this.betaX || 0) > 0.001) {
+            currentVx = (this.betaX || 0) * c;
+        }
+        if (Math.abs(vY_kf) < 0.001 && Math.abs(this.betaY || 0) > 0.001) {
+            currentVy = (this.betaY || 0) * c;
+        }
+
+        let xBase = k1.x + (k2.x - k1.x) * alpha;
+        let yBase = k1.y + (k2.y - k1.y) * alpha;
+        if (k1 === k2 && Math.abs(currentVx) > 0.001) {
+            xBase += currentVx * (t - k1.time);
+        }
+        if (k1 === k2 && Math.abs(currentVy) > 0.001) {
+            yBase += currentVy * (t - k1.time);
+        }
+
         const rot = (k1.rotation ?? 0) + ((k2.rotation ?? 0) - (k1.rotation ?? 0)) * alpha;
         const pX = (k1.pivotX ?? 0) + ((k2.pivotX ?? 0) - (k1.pivotX ?? 0)) * alpha;
         const pY = (k1.pivotY ?? 0) + ((k2.pivotY ?? 0) - (k1.pivotY ?? 0)) * alpha;
-        const w = k1.width + (k2.width - k1.width) * alpha;
-        const h = k1.height + (k2.height - k1.height) * alpha;
+        const baseW = k1.width + (k2.width - k1.width) * alpha;
+        const baseH = k1.height + (k2.height - k1.height) * alpha;
         const color = lerpColor(k1.color || this.color, k2.color || this.color, alpha);
         const strokeColor = lerpColor(k1.strokeColor || this.strokeColor, k2.strokeColor || this.strokeColor, alpha);
         const strokeWidth = (k1.strokeWidth ?? this.strokeWidth) + ((k2.strokeWidth ?? this.strokeWidth) - (k1.strokeWidth ?? this.strokeWidth)) * alpha;
@@ -202,6 +274,19 @@ export class ShapeModel {
         const finalX = pivotWorldX + rotDx;
         const finalY = pivotWorldY + rotDy;
 
+        // Релятивистский расчет:
+        const betaX = c > 0 ? (currentVx / c) : 0;
+        const betaY = c > 0 ? (currentVy / c) : 0;
+        const betaMag = Math.min(0.999, Math.hypot(betaX, betaY));
+        const lorentzFactor = Math.sqrt(Math.max(0.001, 1 - betaMag * betaMag));
+        const gamma = 1 / lorentzFactor;
+
+        const isLorentz = ShapeModel.lorentzEnabled && (this.lorentzContraction ?? true);
+        const k = isLorentz ? lorentzFactor : 1.0;
+
+        const contractedW = Math.max(2, baseW * k);
+        const contractedH = baseH;
+
         return {
             x: finalX,
             y: finalY,
@@ -212,14 +297,24 @@ export class ShapeModel {
             pivotWorldX,
             pivotWorldY,
             rotation: rot,
-            width: w,
-            height: h,
-            radius: Math.max(w, h) / 2,
+            width: contractedW,
+            height: contractedH,
+            restWidth: baseW,
+            restHeight: baseH,
+            radius: Math.max(contractedW, contractedH) / 2,
+            restRadius: Math.max(baseW, baseH) / 2,
             color,
             strokeColor,
             strokeWidth,
             type: this.type,
-            doorsOpen: alpha < 0.5 ? k1.doorsOpen : k2.doorsOpen
+            doorsOpen: alpha < 0.5 ? k1.doorsOpen : k2.doorsOpen,
+            vx: currentVx,
+            vy: currentVy,
+            beta: betaMag,
+            betaX,
+            betaY,
+            lorentzFactor: k,
+            gamma
         };
     }
 
@@ -235,8 +330,8 @@ export class ShapeModel {
             rotation: params.rotation ?? current.rotation ?? this.rotation ?? 0,
             pivotX: params.pivotX ?? current.pivotX ?? this.pivotX ?? 0,
             pivotY: params.pivotY ?? current.pivotY ?? this.pivotY ?? 0,
-            width: params.width ?? current.width ?? this.width,
-            height: params.height ?? current.height ?? this.height,
+            width: params.width ?? current.restWidth ?? this.width,
+            height: params.height ?? current.restHeight ?? this.height,
             color: params.color ?? current.color ?? this.color,
             strokeColor: params.strokeColor ?? current.strokeColor ?? this.strokeColor,
             strokeWidth: params.strokeWidth ?? current.strokeWidth ?? this.strokeWidth,
@@ -258,6 +353,8 @@ export class ShapeModel {
         this.keyframes = this.keyframes.filter(k => Math.abs(k.time - time) >= 0.04);
     }
 }
+
+ShapeModel.lorentzEnabled = true;
 
 /**
  * Библиотека готовых пресетов
