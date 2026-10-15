@@ -208,7 +208,7 @@ export class View2D {
                 const rx = w / 2;
                 const ry = h / 2;
                 ctx.beginPath();
-                ctx.ellipse(0, 0, Math.max(2, rx), ry, 0, 0, Math.PI * 2);
+                ctx.ellipse(0, 0, Math.max(2, rx), Math.max(2, ry), 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
             } else {
@@ -218,10 +218,10 @@ export class View2D {
 
             // Текстовая метка "Истина (Sync)" цвета объекта
             ctx.fillStyle = hexToRgba(col, 0.9);
-            ctx.font = '10px Inter, sans-serif';
-            const labelText = state.lorentzFactor < 0.999 
-                ? `Истина L=${Math.round(state.width)} (L₀=${Math.round(state.restWidth || state.width)})` 
-                : `Истинное ${Math.round(state.x)}`;
+            let labelText = `Истинное (${Math.round(state.x)}, ${Math.round(state.y)})`;
+            if (state.lorentzFactor < 0.999) {
+                labelText = `Истина: W=${Math.round(state.width)}, H=${Math.round(state.height)} (γ=${state.gamma ? state.gamma.toFixed(2) : (1 / state.lorentzFactor).toFixed(2)})`;
+            }
             ctx.fillText(labelText, -w / 2, -h / 2 - 5);
         } else {
             ctx.fillStyle = col;
@@ -232,7 +232,7 @@ export class View2D {
                 const rx = w / 2;
                 const ry = h / 2;
                 ctx.beginPath();
-                ctx.ellipse(0, 0, Math.max(2, rx), ry, 0, 0, Math.PI * 2);
+                ctx.ellipse(0, 0, Math.max(2, rx), Math.max(2, ry), 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
             } else {

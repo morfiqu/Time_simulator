@@ -328,11 +328,10 @@ export class View3D {
                 const s = shape.getStateAt(t, this.state.speedOfLight);
                 let shapeGeo;
                 if (s.type === 'circle') {
-                    const r = (s.restHeight || s.height || 30) / 2;
-                    shapeGeo = new THREE.CircleGeometry(r, 32);
-                    if (s.lorentzFactor < 0.999) {
-                        shapeGeo.scale(s.lorentzFactor, 1, 1);
-                    }
+                    const rx = s.width / 2;
+                    const ry = s.height / 2;
+                    shapeGeo = new THREE.CircleGeometry(1, 32);
+                    shapeGeo.scale(rx, ry, 1);
                 } else {
                     shapeGeo = new THREE.PlaneGeometry(s.width, s.height);
                 }

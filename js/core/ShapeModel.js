@@ -76,6 +76,10 @@ export class ShapeModel {
         this.betaX = beta;
     }
 
+    setBetaY(beta) {
+        this.betaY = beta;
+    }
+
     get vx() {
         return this.betaX * this.speedOfLight;
     }
@@ -152,7 +156,7 @@ export class ShapeModel {
             doorsOpen = (t < this.doorsCloseTime || t > this.doorsOpenTime);
         }
 
-        // Релятивистский расчет сокращения длины (Lorentz Contraction)
+        // Релятивистский расчет сокращения длины (Lorentz Contraction в 2D)
         const betaX = this.betaX ?? 0;
         const betaY = this.betaY ?? 0;
         const betaMag = Math.min(0.999, Math.hypot(betaX, betaY));
@@ -160,11 +164,16 @@ export class ShapeModel {
         const gamma = 1 / lorentzFactor;
 
         const isLorentz = ShapeModel.lorentzEnabled && (this.lorentzContraction ?? true);
-        const k = isLorentz ? lorentzFactor : 1.0;
 
-        // Сжатие вдоль оси движения (по умолчанию вдоль длины/оси X)
-        const contractedW = Math.max(2, baseW * k);
-        const contractedH = baseH;
+        // Проекция скорости на локальные оси фигуры (с учетом угла вращения rot):
+        const betaU = betaX * cos + betaY * sin;
+        const betaV = -betaX * sin + betaY * cos;
+
+        const kU = isLorentz ? Math.sqrt(Math.max(0.001, 1 - Math.min(0.999, betaU * betaU))) : 1.0;
+        const kV = isLorentz ? Math.sqrt(Math.max(0.001, 1 - Math.min(0.999, betaV * betaV))) : 1.0;
+
+        const contractedW = Math.max(2, baseW * kU);
+        const contractedH = Math.max(2, baseH * kV);
 
         return {
             x: finalX,
@@ -192,7 +201,9 @@ export class ShapeModel {
             beta: betaMag,
             betaX,
             betaY,
-            lorentzFactor: k,
+            lorentzFactor: lorentzFactor,
+            kU,
+            kV,
             gamma
         };
     }
@@ -274,7 +285,7 @@ export class ShapeModel {
         const finalX = pivotWorldX + rotDx;
         const finalY = pivotWorldY + rotDy;
 
-        // Релятивистский расчет:
+        // Релятивистский расчет сокращения длины (Lorentz Contraction в 2D)
         const betaX = c > 0 ? (currentVx / c) : 0;
         const betaY = c > 0 ? (currentVy / c) : 0;
         const betaMag = Math.min(0.999, Math.hypot(betaX, betaY));
@@ -282,10 +293,16 @@ export class ShapeModel {
         const gamma = 1 / lorentzFactor;
 
         const isLorentz = ShapeModel.lorentzEnabled && (this.lorentzContraction ?? true);
-        const k = isLorentz ? lorentzFactor : 1.0;
 
-        const contractedW = Math.max(2, baseW * k);
-        const contractedH = baseH;
+        // Проекция скорости на локальные оси фигуры (с учетом угла вращения rot):
+        const betaU = betaX * cos + betaY * sin;
+        const betaV = -betaX * sin + betaY * cos;
+
+        const kU = isLorentz ? Math.sqrt(Math.max(0.001, 1 - Math.min(0.999, betaU * betaU))) : 1.0;
+        const kV = isLorentz ? Math.sqrt(Math.max(0.001, 1 - Math.min(0.999, betaV * betaV))) : 1.0;
+
+        const contractedW = Math.max(2, baseW * kU);
+        const contractedH = Math.max(2, baseH * kV);
 
         return {
             x: finalX,
@@ -313,7 +330,9 @@ export class ShapeModel {
             beta: betaMag,
             betaX,
             betaY,
-            lorentzFactor: k,
+            lorentzFactor: lorentzFactor,
+            kU,
+            kV,
             gamma
         };
     }

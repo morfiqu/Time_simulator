@@ -473,8 +473,12 @@ export class ViewEditor {
                 <input type="color" id="popup-shape-stroke" value="${stateAtT.strokeColor || shape.strokeColor}">
             </div>
             <div class="popup-row">
-                <label>Скорость β (v/c):</label>
-                <input type="number" id="popup-shape-beta" step="0.05" value="${shape.betaX ?? 0}">
+                <label>Скорость βₓ (vₓ/c):</label>
+                <input type="number" id="popup-shape-betax" step="0.05" min="-0.99" max="0.99" value="${shape.betaX ?? 0}">
+            </div>
+            <div class="popup-row">
+                <label>Скорость βᵧ (vᵧ/c):</label>
+                <input type="number" id="popup-shape-betay" step="0.05" min="-0.99" max="0.99" value="${shape.betaY ?? 0}">
             </div>
             <button id="popup-btn-key" class="btn btn-xs btn-primary btn-block mt-2">
                 ◆ Зафиксировать цвет в ключе (t = ${this.state.currentTime.toFixed(2)}s)
@@ -519,11 +523,21 @@ export class ViewEditor {
             this.render();
         });
 
-        const inputBeta = popup.querySelector('#popup-shape-beta');
-        inputBeta.addEventListener('input', (e) => {
+        const inputBetaX = popup.querySelector('#popup-shape-betax');
+        inputBetaX.addEventListener('input', (e) => {
             const val = parseFloat(e.target.value);
             if (!isNaN(val)) {
                 shape.setBetaX(val);
+                this.state.emit('shapesUpdated', this.state.shapes);
+                this.render();
+            }
+        });
+
+        const inputBetaY = popup.querySelector('#popup-shape-betay');
+        inputBetaY.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            if (!isNaN(val)) {
+                shape.setBetaY(val);
                 this.state.emit('shapesUpdated', this.state.shapes);
                 this.render();
             }
@@ -761,7 +775,7 @@ export class ViewEditor {
             const rx = w / 2;
             const ry = h / 2;
             ctx.beginPath();
-            ctx.ellipse(0, 0, Math.max(2, rx), ry, 0, 0, Math.PI * 2);
+            ctx.ellipse(0, 0, Math.max(2, rx), Math.max(2, ry), 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
 
@@ -850,11 +864,16 @@ export class ViewEditor {
             ctx.fillStyle = 'rgba(14, 23, 42, 0.9)';
             ctx.strokeStyle = '#38bdf8';
             ctx.lineWidth = 1;
-            const tagText = `L: ${Math.round(s.width)}px (L₀: ${Math.round(s.restWidth)}px, ${(s.lorentzFactor * 100).toFixed(0)}%)`;
+            const wPart = `W: ${Math.round(s.width)}/${Math.round(s.restWidth || s.width)}`;
+            const hPart = `H: ${Math.round(s.height)}/${Math.round(s.restHeight || s.height)}`;
+            const tagText = `${wPart}, ${hPart} (γ=${s.gamma ? s.gamma.toFixed(2) : (1 / s.lorentzFactor).toFixed(2)})`;
             ctx.font = '10px Inter, monospace';
             const tw = ctx.measureText(tagText).width;
-            const tagX = center.x - tw / 2 - 6;
-            const tagY = center.y + (h / 2) + 14 * this.scale;
+            const tagX = Math.max(10, Math.min(this.width - tw - 20, center.x - tw / 2 - 6));
+            let tagY = center.y + (h / 2) + 14 * this.scale;
+            if (tagY + 22 > this.height) {
+                tagY = Math.max(10, center.y - (h / 2) - 26 * this.scale);
+            }
             ctx.beginPath();
             ctx.roundRect(tagX, tagY, tw + 12, 18, 4);
             ctx.fill();
