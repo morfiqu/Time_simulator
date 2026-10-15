@@ -110,13 +110,13 @@ export class View3D {
 
         // Масштабы 3D-мира
         this.spaceSize = 400;      // Пространство XZ [-200, 200]
-        this.timeHeight = 320;     // Высота оси времени Y [0, 320]
+        this.timeHeight = this.state.timeHeight || 320; // Высота оси времени Y
 
         // Коллекция для быстрого обновления шейдеров каждого слоя
         this.layersData = [];
 
         this.initScene();
-        this.initStaticElements();
+        this.buildStaticElements();
         this.bindEvents();
     }
 

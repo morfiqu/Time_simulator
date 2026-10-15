@@ -84,8 +84,6 @@ export class AppState {
         const slope = c / this.heightPerSecond;
         return (Math.atan(slope) * 180) / Math.PI;
     }
-        return (Math.atan(slope) * 180) / Math.PI;
-    }
 
     setConeAngle(angleDeg) {
         const clamped = Math.max(15, Math.min(75, angleDeg));

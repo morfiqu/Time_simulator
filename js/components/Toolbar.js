@@ -88,10 +88,10 @@ export class Toolbar {
             this.state.setTime(0);
         });
 
-        // Клавиша R для сброса
+        // Клавиша Home или клик для сброса
         window.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-            if (e.code === 'KeyR') {
+            if (e.code === 'Home') {
                 this.state.setTime(0);
             }
         });

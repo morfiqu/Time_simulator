@@ -86,9 +86,9 @@ class Application {
 
         // Обновляем размеры рендереров после анимации раскладки
         setTimeout(() => {
-            this.viewEditor.onResize();
-            this.view3D.onResize();
-            this.view2D.onResize();
+            this.viewEditor?.onResize();
+            this.view3D?.onResize();
+            this.view2D?.onResize();
         }, 50);
     }
 
@@ -117,7 +117,15 @@ class Application {
     }
 }
 
-// Запуск приложения после загрузки DOM
-window.addEventListener('DOMContentLoaded', () => {
-    window.app = new Application();
-});
+// Запуск приложения после загрузки DOM (или сразу, если DOM уже готов)
+function startApp() {
+    if (!window.app) {
+        window.app = new Application();
+    }
+}
+
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', startApp);
+} else {
+    startApp();
+}
