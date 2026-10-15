@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Simulator — Симулятор пространства-времени и световых конусов</title>
+    <link rel="stylesheet" href="./css/style.css">
+
+    <!-- ES Module Import Map для чистой загрузки Three.js без сборщиков -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "./vendor/three.module.js",
+            "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js"
+        }
+    }
+    </script>
+</head>
+<body>
+    <!-- Верхняя панель: пресеты, режимы отображения, сброс -->
+    <header class="app-header" id="toolbar-container"></header>
+
+    <!-- Основная рабочая область: 3D и 2D вьюпорты + боковая панель -->
+    <main class="app-workspace">
+        <div class="viewports-wrapper" id="viewports-wrapper">
+            <!-- 3D Вид: Пространство-время Минковского, световой конус, слои -->
+            <div class="viewport-box" id="viewport-3d-container">
+                <div class="viewport-header">
+                    <span>3D Пространство-время (Ось Y = Время t)</span>
+                    <span class="viewport-badge">Минковский / Конус</span>
+                </div>
+                <div class="viewport-canvas-container" id="canvas-3d-box"></div>
+            </div>
+
+            <!-- 2D Вид: Оптическая проекция наблюдателя, релятивистские искажения -->
+            <div class="viewport-box" id="viewport-2d-container">
+                <div class="viewport-header">
+                    <span>2D Вид наблюдателя (Срез светового конуса)</span>
+                    <span class="viewport-badge">Запаздывание света</span>
+                </div>
+                <div class="viewport-canvas-container" id="canvas-2d-box">
+                    <canvas id="canvas-2d"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Боковая панель инспектора: физика, свойства объектов, слои 3D -->
+        <aside class="inspector-panel" id="inspector-container"></aside>
+    </main>
+
+    <!-- Нижняя панель: таймлайн в стиле видеоредактора -->
+    <footer class="timeline-panel" id="timeline-container"></footer>
+
+    <!-- Главный скрипт приложения -->
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>

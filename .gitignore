@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+.npm/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editors
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Build / Temp
+dist/
+temp/
+*.log

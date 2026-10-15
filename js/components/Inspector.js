@@ -1,0 +1,303 @@
+/**
+ * Inspector.js
+ * Боковая панель свойств: физика, объекты сцены, слои 3D и параметры проекции 2D.
+ */
+
+import { ShapeModel } from '../core/ShapeModel.js';
+
+export class Inspector {
+    constructor(containerElement, state) {
+        this.container = containerElement;
+        this.state = state;
+
+        this.renderDom();
+        this.bindEvents();
+    }
+
+    renderDom() {
+        this.container.innerHTML = `
+            <div class="panel-section">
+                <h3 class="section-title">⚡ Физика времени</h3>
+                <div class="control-row">
+                    <label>Скорость света (c):</label>
+                    <div class="slider-val-group">
+                        <input type="range" id="slider-c" min="30" max="250" step="5" value="${this.state.speedOfLight}">
+                        <span id="val-c" class="val-badge">${this.state.speedOfLight} px/s</span>
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <label>Позиция наблюдателя X:</label>
+                    <input type="range" id="slider-obs-x" min="-180" max="180" step="5" value="${this.state.observer.x}">
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="section-header-flex">
+                    <h3 class="section-title">📦 Объекты сцены</h3>
+                    <div class="btn-group-sm">
+                        <button id="btn-add-rod" class="btn btn-xs btn-primary">+ Стержень</button>
+                        <button id="btn-add-barn" class="btn btn-xs btn-outline">+ Сарай</button>
+                    </div>
+                </div>
+
+                <div id="shapes-list" class="shapes-list"></div>
+
+                <div id="shape-props-box" class="shape-props-box" style="display:none;">
+                    <div class="control-row">
+                        <label>Имя:</label>
+                        <input type="text" id="prop-shape-name" class="input-text-sm">
+                    </div>
+
+                    <div class="control-row">
+                        <label>Цвет:</label>
+                        <input type="color" id="prop-shape-color" class="input-color-sm">
+                    </div>
+
+                    <div class="control-row-grid">
+                        <div>
+                            <label>X₀ (старт):</label>
+                            <input type="number" id="prop-shape-x0" class="input-num-sm" step="5">
+                        </div>
+                        <div>
+                            <label>Скорость Vx:</label>
+                            <input type="number" id="prop-shape-vx" class="input-num-sm" step="5">
+                        </div>
+                    </div>
+
+                    <div class="control-row-grid">
+                        <div>
+                            <label>Ширина L₀:</label>
+                            <input type="number" id="prop-shape-w" class="input-num-sm" min="10" max="300" step="5">
+                        </div>
+                        <div>
+                            <label>Высота H:</label>
+                            <input type="number" id="prop-shape-h" class="input-num-sm" min="6" max="100" step="2">
+                        </div>
+                    </div>
+
+                    <button id="btn-delete-shape" class="btn btn-xs btn-danger btn-block mt-2">
+                        Удалить объект
+                    </button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3 class="section-title">🌐 Вид 3D (Минковский)</h3>
+                <div class="control-row">
+                    <label>Слои времени:</label>
+                    <div class="slider-val-group">
+                        <input type="range" id="slider-layers-count" min="12" max="72" step="6" value="${this.state.settings.layersCount}">
+                        <span id="val-layers-count" class="val-badge">${this.state.settings.layersCount}</span>
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <label>Прозрачность слоев:</label>
+                    <input type="range" id="slider-layers-opacity" min="0.05" max="0.5" step="0.02" value="${this.state.settings.layersOpacity}">
+                </div>
+
+                <div class="control-checkbox-row">
+                    <label><input type="checkbox" id="chk-world-tubes" ${this.state.settings.showWorldTubes ? 'checked' : ''}> Мировые трубки (Worldtubes)</label>
+                </div>
+
+                <div class="control-checkbox-row">
+                    <label><input type="checkbox" id="chk-light-cone" ${this.state.settings.showLightCone ? 'checked' : ''}> 3D Световой конус</label>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3 class="section-title">👁️ Вид 2D (Наблюдатель)</h3>
+                <div class="control-row">
+                    <label>Режим восприятия:</label>
+                    <select id="select-2d-mode" class="select-sm select-block">
+                        <option value="both" ${this.state.settings.view2DMode === 'both' ? 'selected' : ''}>Оба (Сравнение и наложение)</option>
+                        <option value="retarded" ${this.state.settings.view2DMode === 'retarded' ? 'selected' : ''}>Световой конус (Запаздывание)</option>
+                        <option value="instant" ${this.state.settings.view2DMode === 'instant' ? 'selected' : ''}>Синхронно (Абсолютное t)</option>
+                    </select>
+                </div>
+
+                <div class="control-checkbox-row">
+                    <label><input type="checkbox" id="chk-measurement" ${this.state.settings.showMeasurement ? 'checked' : ''}> Линейка измерения стержня (HUD)</label>
+                </div>
+            </div>
+        `;
+
+        this.dom = {
+            sliderC: this.container.querySelector('#slider-c'),
+            valC: this.container.querySelector('#val-c'),
+            sliderObsX: this.container.querySelector('#slider-obs-x'),
+            btnAddRod: this.container.querySelector('#btn-add-rod'),
+            btnAddBarn: this.container.querySelector('#btn-add-barn'),
+            shapesList: this.container.querySelector('#shapes-list'),
+            shapePropsBox: this.container.querySelector('#shape-props-box'),
+            propName: this.container.querySelector('#prop-shape-name'),
+            propColor: this.container.querySelector('#prop-shape-color'),
+            propX0: this.container.querySelector('#prop-shape-x0'),
+            propVx: this.container.querySelector('#prop-shape-vx'),
+            propW: this.container.querySelector('#prop-shape-w'),
+            propH: this.container.querySelector('#prop-shape-h'),
+            btnDeleteShape: this.container.querySelector('#btn-delete-shape'),
+            sliderLayersCount: this.container.querySelector('#slider-layers-count'),
+            valLayersCount: this.container.querySelector('#val-layers-count'),
+            sliderLayersOpacity: this.container.querySelector('#slider-layers-opacity'),
+            chkWorldTubes: this.container.querySelector('#chk-world-tubes'),
+            chkLightCone: this.container.querySelector('#chk-light-cone'),
+            select2DMode: this.container.querySelector('#select-2d-mode'),
+            chkMeasurement: this.container.querySelector('#chk-measurement')
+        };
+
+        this.renderShapesList();
+        this.updateShapeProps();
+    }
+
+    bindEvents() {
+        // Скорость света
+        this.dom.sliderC.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            this.dom.valC.textContent = `${val} px/s`;
+            this.state.setSpeedOfLight(val);
+        });
+
+        // Положение наблюдателя
+        this.dom.sliderObsX.addEventListener('input', (e) => {
+            this.state.observer.x = parseFloat(e.target.value);
+            this.state.emit('settingsChanged', this.state.settings);
+        });
+
+        // Добавление стержня
+        this.dom.btnAddRod.addEventListener('click', () => {
+            const newShape = new ShapeModel({
+                name: 'Новый стержень',
+                type: 'rod',
+                color: '#34d399',
+                x0: -200,
+                vx: 60,
+                width: 60,
+                height: 20
+            });
+            this.state.shapes.push(newShape);
+            this.state.setShapes(this.state.shapes);
+            this.state.selectShape(newShape.id);
+        });
+
+        // Добавление сарая
+        this.dom.btnAddBarn.addEventListener('click', () => {
+            const newShape = new ShapeModel({
+                name: 'Сарай',
+                type: 'barn',
+                color: '#fbbf24',
+                x0: 0,
+                vx: 0,
+                width: 100,
+                height: 45
+            });
+            this.state.shapes.push(newShape);
+            this.state.setShapes(this.state.shapes);
+            this.state.selectShape(newShape.id);
+        });
+
+        // Редактирование свойств фигуры
+        const updateCurrentShape = () => {
+            const shape = this.state.getSelectedShape();
+            if (!shape) return;
+            shape.name = this.dom.propName.value;
+            shape.color = this.dom.propColor.value;
+            shape.x0 = parseFloat(this.dom.propX0.value) || 0;
+            shape.vx = parseFloat(this.dom.propVx.value) || 0;
+            shape.width = parseFloat(this.dom.propW.value) || 10;
+            shape.height = parseFloat(this.dom.propH.value) || 10;
+            this.renderShapesList();
+            this.state.emit('shapesUpdated', this.state.shapes);
+        };
+
+        this.dom.propName.addEventListener('input', updateCurrentShape);
+        this.dom.propColor.addEventListener('input', updateCurrentShape);
+        this.dom.propX0.addEventListener('input', updateCurrentShape);
+        this.dom.propVx.addEventListener('input', updateCurrentShape);
+        this.dom.propW.addEventListener('input', updateCurrentShape);
+        this.dom.propH.addEventListener('input', updateCurrentShape);
+
+        // Удаление фигуры
+        this.dom.btnDeleteShape.addEventListener('click', () => {
+            const shape = this.state.getSelectedShape();
+            if (!shape) return;
+            this.state.shapes = this.state.shapes.filter(s => s.id !== shape.id);
+            this.state.setShapes(this.state.shapes);
+        });
+
+        // Настройки 3D
+        this.dom.sliderLayersCount.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            this.dom.valLayersCount.textContent = val;
+            this.state.updateSetting('layersCount', val);
+        });
+
+        this.dom.sliderLayersOpacity.addEventListener('input', (e) => {
+            this.state.updateSetting('layersOpacity', parseFloat(e.target.value));
+        });
+
+        this.dom.chkWorldTubes.addEventListener('change', (e) => {
+            this.state.updateSetting('showWorldTubes', e.target.checked);
+        });
+
+        this.dom.chkLightCone.addEventListener('change', (e) => {
+            this.state.updateSetting('showLightCone', e.target.checked);
+        });
+
+        // Настройки 2D
+        this.dom.select2DMode.addEventListener('change', (e) => {
+            this.state.updateSetting('view2DMode', e.target.value);
+        });
+
+        this.dom.chkMeasurement.addEventListener('change', (e) => {
+            this.state.updateSetting('showMeasurement', e.target.checked);
+        });
+
+        // Слушатели событий состояния
+        this.state.on('shapesUpdated', () => {
+            this.renderShapesList();
+            this.updateShapeProps();
+        });
+
+        this.state.on('shapeSelected', () => {
+            this.renderShapesList();
+            this.updateShapeProps();
+        });
+    }
+
+    renderShapesList() {
+        const list = this.dom.shapesList;
+        list.innerHTML = '';
+
+        this.state.shapes.forEach(shape => {
+            const item = document.createElement('div');
+            item.className = `shape-item ${shape.id === this.state.selectedShapeId ? 'active' : ''}`;
+            item.innerHTML = `
+                <span class="shape-badge-color" style="background:${shape.color};"></span>
+                <span class="shape-item-name">${shape.name}</span>
+                <span class="shape-item-type">${shape.type === 'barn' ? 'Сарай' : 'Стержень'}</span>
+            `;
+            item.addEventListener('click', () => {
+                this.state.selectShape(shape.id);
+            });
+            list.appendChild(item);
+        });
+    }
+
+    updateShapeProps() {
+        const shape = this.state.getSelectedShape();
+        if (!shape) {
+            this.dom.shapePropsBox.style.display = 'none';
+            return;
+        }
+
+        this.dom.shapePropsBox.style.display = 'block';
+        this.dom.propName.value = shape.name;
+        this.dom.propColor.value = shape.color;
+        this.dom.propX0.value = shape.x0;
+        this.dom.propVx.value = shape.vx;
+        this.dom.propW.value = shape.width;
+        this.dom.propH.value = shape.height;
+    }
+}
