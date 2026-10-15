@@ -1,0 +1,19 @@
+{
+  "name": "time-simulator",
+  "version": "1.0.0",
+  "description": "Interactive Minkowski spacetime and light cone simulator",
+  "type": "module",
+  "scripts": {
+    "start": "python server.py"
+  },
+  "keywords": [
+    "spacetime",
+    "minkowski",
+    "light-cone",
+    "relativity",
+    "threejs",
+    "physics-simulator"
+  ],
+  "author": "",
+  "license": "MIT"
+}
