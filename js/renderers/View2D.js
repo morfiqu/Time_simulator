@@ -250,6 +250,69 @@ export class View2D {
     }
 
     /**
+     * Расчет точного положения и времени испускания для любой материальной точки фигуры
+     */
+    getRetardedPoint(shape, localU, localV, tCurr, obs, c, stateInstant) {
+        const rad = (stateInstant.rotation * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+
+        // Текущая мировая позиция этой материальной точки в момент tCurr:
+        const xCurr = stateInstant.x + (localU * cos - localV * sin);
+        const yCurr = stateInstant.y + (localU * sin + localV * cos);
+
+        // Вектор от наблюдателя к текущей позиции точки:
+        const Dx = xCurr - obs.x;
+        const Dy = yCurr - obs.y;
+        const distSq = Dx * Dx + Dy * Dy;
+
+        const vx = stateInstant.vx || 0;
+        const vy = stateInstant.vy || 0;
+        const vSq = vx * vx + vy * vy;
+
+        let tau = 0;
+        if (vSq < 0.001 || c <= 0) {
+            // Неподвижный объект
+            tau = Math.sqrt(distSq) / c;
+        } else {
+            // Движущийся объект: точное решение релятивистского уравнения запаздывания
+            const D_dot_v = Dx * vx + Dy * vy;
+            const A = Math.max(0.001, c * c - vSq);
+            const disc = D_dot_v * D_dot_v + A * distSq;
+            tau = (-D_dot_v + Math.sqrt(Math.max(0, disc))) / A;
+        }
+
+        const tEmit = tCurr - tau;
+
+        let xEmit, yEmit, col, doorsOpen;
+        if (shape.keyframes && shape.keyframes.length > 1) {
+            const pastS = shape.getStateAt(Math.max(0, tEmit), c);
+            const pastRad = (pastS.rotation * Math.PI) / 180;
+            const pCos = Math.cos(pastRad);
+            const pSin = Math.sin(pastRad);
+            xEmit = pastS.x + (localU * pCos - localV * pSin);
+            yEmit = pastS.y + (localU * pSin + localV * pCos);
+            col = pastS.color || shape.color;
+            doorsOpen = pastS.doorsOpen;
+        } else {
+            xEmit = xCurr - vx * tau;
+            yEmit = yCurr - vy * tau;
+            col = stateInstant.color || shape.color;
+            doorsOpen = stateInstant.doorsOpen;
+        }
+
+        return {
+            worldX: xEmit,
+            worldY: yEmit,
+            tEmit,
+            tau,
+            isInsideHorizon: (tEmit >= 0),
+            color: col,
+            doorsOpen
+        };
+    }
+
+    /**
      * Отрисовка видимого (релятивистского) положения с учетом запаздывания света
      */
     drawRetardedShape(shape, tCurr, obs, c) {
@@ -261,97 +324,88 @@ export class View2D {
         const maxRadius = c * tCurr;
         if (maxRadius <= 0.001) {
             if (shape.type === 'rod' || this.state.shapes[0] === shape) {
-                this.currentMeasurement = { isVisible: false, realLength: stateInstant.width };
+                this.currentMeasurement = {
+                    isVisible: false,
+                    realLength: stateInstant.width,
+                    restLength: stateInstant.restWidth || stateInstant.width
+                };
             }
             return;
         }
 
-        // Для кругов или вращающихся объектов рисуем их ретардированное состояние
-        if (shape.type === 'circle' || Math.abs(stateInstant.rotation) > 0.01) {
-            const tRet = SpacetimeMath.getRetardedTime(stateInstant.x, stateInstant.y, obs.x, obs.y, tCurr, c);
-            if (tRet < 0) return; // Свет ещё не дошел
-
-            const pastState = shape.getStateAt(tRet, c);
-            const screen = this.worldToScreen(pastState.x, pastState.y);
-            const w = pastState.width * this.scale;
-            const h = pastState.height * this.scale;
-            const rad = (pastState.rotation * Math.PI) / 180;
-            const col = pastState.color || shape.color || '#38bdf8';
-
-            ctx.save();
-            ctx.translate(screen.x, screen.y);
-            ctx.rotate(rad);
-
-            ctx.fillStyle = col;
-            ctx.strokeStyle = pastState.strokeColor || col;
-            ctx.lineWidth = pastState.strokeWidth || 2;
-            ctx.shadowColor = col;
-            ctx.shadowBlur = 10;
-
-            if (shape.type === 'circle') {
-                const rx = w / 2;
-                const ry = h / 2;
-                ctx.beginPath();
-                ctx.ellipse(0, 0, Math.max(2, rx), ry, 0, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-            } else {
-                ctx.fillRect(-w / 2, -h / 2, w, h);
-                ctx.strokeRect(-w / 2, -h / 2, w, h);
+        // Строим 2D-полигон запаздывающих граничных точек фигуры
+        const vertices = [];
+        if (shape.type === 'circle') {
+            const N = 48;
+            const rx = stateInstant.width / 2;
+            const ry = stateInstant.height / 2;
+            for (let i = 0; i < N; i++) {
+                const angle = (i / N) * Math.PI * 2;
+                const u = rx * Math.cos(angle);
+                const v = ry * Math.sin(angle);
+                vertices.push(this.getRetardedPoint(shape, u, v, tCurr, obs, c, stateInstant));
             }
+        } else {
+            const halfW = stateInstant.width / 2;
+            const halfH = stateInstant.height / 2;
+            const segX = 16;
+            const segY = 16;
 
-            ctx.restore();
-            return;
-        }
-
-        // Сканируем только внутри причинного светового горизонта [obs.x - maxRadius, obs.x + maxRadius]
-        const startX = Math.max(-250, obs.x - maxRadius);
-        const endX = Math.min(250, obs.x + maxRadius);
-        const stepX = 1.0;
-
-        ctx.save();
-
-        let activeStripes = [];
-
-        for (let x = startX; x <= endX; x += stepX) {
-            const tRet = SpacetimeMath.getRetardedTime(x, stateInstant.y, obs.x, obs.y, tCurr, c);
-            // Если tRet < 0: событие произошло ДО начала симуляции (до t=0).
-            // До наблюдателя этот свет ещё не успел дойти!
-            if (tRet < 0) continue;
-
-            const pastState = shape.getStateAt(tRet, c);
-
-            // Проверяем, находится ли точка x внутри прямоугольника в момент tRet
-            const halfW = pastState.width / 2;
-            if (x >= pastState.x - halfW && x <= pastState.x + halfW) {
-                const screenP = this.worldToScreen(x, pastState.y);
-                const halfH = (pastState.height / 2) * this.scale;
-                activeStripes.push({
-                    worldX: x,
-                    sx: screenP.x,
-                    sy: screenP.y,
-                    topY: screenP.y - halfH,
-                    botY: screenP.y + halfH,
-                    doorsOpen: pastState.doorsOpen,
-                    color: pastState.color || shape.color || '#38bdf8',
-                    strokeColor: pastState.strokeColor || pastState.color || shape.color || '#ffffff',
-                    strokeWidth: pastState.strokeWidth || 2
-                });
+            // Верхняя грань: слева направо (v = -halfH, u от -halfW до +halfW)
+            for (let i = 0; i <= segX; i++) {
+                const u = -halfW + (i / segX) * (2 * halfW);
+                vertices.push(this.getRetardedPoint(shape, u, -halfH, tCurr, obs, c, stateInstant));
+            }
+            // Правая грань: сверху вниз (u = +halfW, v от -halfH до +halfH)
+            for (let i = 1; i <= segY; i++) {
+                const v = -halfH + (i / segY) * (2 * halfH);
+                vertices.push(this.getRetardedPoint(shape, halfW, v, tCurr, obs, c, stateInstant));
+            }
+            // Нижняя грань: справа налево (v = +halfH, u от +halfW до -halfW)
+            for (let i = 1; i <= segX; i++) {
+                const u = halfW - (i / segX) * (2 * halfW);
+                vertices.push(this.getRetardedPoint(shape, u, halfH, tCurr, obs, c, stateInstant));
+            }
+            // Левая грань: снизу вверх (u = -halfW, v от +halfH до -halfH)
+            for (let i = 1; i < segY; i++) {
+                const v = halfH - (i / segY) * (2 * halfH);
+                vertices.push(this.getRetardedPoint(shape, -halfW, v, tCurr, obs, c, stateInstant));
             }
         }
 
-        // Сохраняем точные данные для линейки измерения
+        if (vertices.length === 0) return;
+
+        // Проверяем, есть ли точки внутри причинного светового горизонта
+        const visibleVertices = vertices.filter(v => v.tEmit >= 0);
+        const hasVisible = visibleVertices.length > 0;
+
+        // Измерение наблюдаемой длины стержня (для HUD)
         if (shape.type === 'rod' || this.state.shapes[0] === shape) {
-            if (activeStripes.length > 0) {
-                const first = activeStripes[0];
-                const last = activeStripes[activeStripes.length - 1];
-                const obsLen = last.worldX - first.worldX;
+            if (hasVisible) {
+                let minX = Infinity;
+                let maxX = -Infinity;
+                let minScreenX = Infinity;
+                let maxScreenX = -Infinity;
+                let sumY = 0;
+
+                visibleVertices.forEach(v => {
+                    const sp = this.worldToScreen(v.worldX, v.worldY);
+                    if (v.worldX < minX) minX = v.worldX;
+                    if (v.worldX > maxX) maxX = v.worldX;
+                    if (sp.x < minScreenX) minScreenX = sp.x;
+                    if (sp.x > maxScreenX) maxScreenX = sp.x;
+                    sumY += sp.y;
+                });
+
+                const obsLen = Math.max(1, maxX - minX);
+                const avgScreenY = sumY / visibleVertices.length;
+
                 this.currentMeasurement = {
                     isVisible: true,
-                    minScreenX: first.sx,
-                    maxScreenX: last.sx,
-                    screenY: (first.topY + first.botY) / 2,
-                    observedLength: Math.max(1, obsLen),
+                    minScreenX,
+                    maxScreenX,
+                    screenY: avgScreenY,
+                    observedLength: obsLen,
                     realLength: stateInstant.width,
                     restLength: stateInstant.restWidth || stateInstant.width,
                     lorentzFactor: stateInstant.lorentzFactor || 1,
@@ -366,55 +420,69 @@ export class View2D {
             }
         }
 
-        // Если фигура видна в поле зрения светового конуса
-        if (activeStripes.length > 0) {
-            const firstStripe = activeStripes[0];
-            const lastStripe = activeStripes[activeStripes.length - 1];
-            const firstColor = firstStripe.color;
-            const lastColor = lastStripe.color;
+        if (!hasVisible) {
+            // Тело полностью за пределами светового горизонта, свет ещё не дошел
+            return;
+        }
 
-            // Если цвет меняется вдоль стержня (из-за запаздывания света от ключевых кадров цвета),
-            // создаем плавный линейный градиент или заливку
-            let fillStyle = firstColor;
-            if (firstColor !== lastColor && activeStripes.length > 1) {
-                const grad = ctx.createLinearGradient(firstStripe.sx, 0, lastStripe.sx, 0);
-                grad.addColorStop(0, firstColor);
-                grad.addColorStop(1, lastColor);
-                fillStyle = grad;
+        const sObs = this.worldToScreen(obs.x, obs.y);
+        const maxRadiusScreen = maxRadius * this.scale;
+
+        ctx.save();
+
+        // 1. Физическая отсечка причинным световым горизонтом:
+        // Рисуем ТОЛЬКО внутри круга радиуса c * tCurr вокруг наблюдателя!
+        ctx.beginPath();
+        ctx.arc(sObs.x, sObs.y, maxRadiusScreen, 0, Math.PI * 2);
+        ctx.clip();
+
+        // 2. Отрисовываем ретардированный полигон фигуры
+        ctx.beginPath();
+        const p0 = this.worldToScreen(vertices[0].worldX, vertices[0].worldY);
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = 1; i < vertices.length; i++) {
+            const p = this.worldToScreen(vertices[i].worldX, vertices[i].worldY);
+            ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+
+        // Поддержка градиента цвета при изменении во времени
+        let fillStyle = vertices[0].color || shape.color || '#38bdf8';
+        const lastColor = vertices[Math.floor(vertices.length / 2)].color;
+        if (lastColor && fillStyle !== lastColor) {
+            const pMid = this.worldToScreen(vertices[Math.floor(vertices.length / 2)].worldX, vertices[Math.floor(vertices.length / 2)].worldY);
+            const grad = ctx.createLinearGradient(p0.x, p0.y, pMid.x, pMid.y);
+            grad.addColorStop(0, fillStyle);
+            grad.addColorStop(1, lastColor);
+            fillStyle = grad;
+        }
+
+        const strokeColor = stateInstant.strokeColor || vertices[0].color || shape.color || '#ffffff';
+        const strokeWidth = stateInstant.strokeWidth || 2;
+
+        ctx.fillStyle = fillStyle;
+        ctx.fill();
+
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = strokeWidth;
+        ctx.shadowColor = vertices[0].color || shape.color || '#38bdf8';
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+
+        // 3. Если это сарай, отрисовываем двери в их ретардированном состоянии
+        if (shape.type === 'barn') {
+            const halfW = stateInstant.width / 2;
+            const ptLeft = this.getRetardedPoint(shape, -halfW, 0, tCurr, obs, c, stateInstant);
+            const ptRight = this.getRetardedPoint(shape, halfW, 0, tCurr, obs, c, stateInstant);
+            const sLeft = this.worldToScreen(ptLeft.worldX, ptLeft.worldY);
+            const sRight = this.worldToScreen(ptRight.worldX, ptRight.worldY);
+            const doorH = stateInstant.height * this.scale;
+
+            if (ptLeft.tEmit >= 0) {
+                this.drawBarnDoorAt(ctx, sLeft.x, sLeft.y, doorH, ptLeft.doorsOpen);
             }
-
-            ctx.beginPath();
-            // Верхняя граница слева направо
-            ctx.moveTo(activeStripes[0].sx, activeStripes[0].topY);
-            for (let i = 1; i < activeStripes.length; i++) {
-                ctx.lineTo(activeStripes[i].sx, activeStripes[i].topY);
-            }
-            // Правый торец
-            ctx.lineTo(lastStripe.sx, lastStripe.botY);
-            // Нижняя граница справа налево
-            for (let i = activeStripes.length - 2; i >= 0; i--) {
-                ctx.lineTo(activeStripes[i].sx, activeStripes[i].botY);
-            }
-            ctx.closePath();
-
-            ctx.fillStyle = fillStyle;
-            ctx.fill();
-
-            // Неоновая светящаяся обводка в цвет фигуры
-            ctx.strokeStyle = firstStripe.strokeColor || firstColor;
-            ctx.lineWidth = firstStripe.strokeWidth || 2;
-            ctx.shadowColor = firstColor;
-            ctx.shadowBlur = 10;
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-
-            // Если это сарай, отрисовываем состояние видимых дверей
-            if (shape.type === 'barn') {
-                const h = lastStripe.botY - lastStripe.topY;
-                const leftScreen = { x: firstStripe.sx, y: (firstStripe.topY + firstStripe.botY) / 2 };
-                const rightScreen = { x: lastStripe.sx, y: (lastStripe.topY + lastStripe.botY) / 2 };
-                this.drawBarnDoorAt(ctx, leftScreen.x, leftScreen.y, h, firstStripe.doorsOpen);
-                this.drawBarnDoorAt(ctx, rightScreen.x, rightScreen.y, h, lastStripe.doorsOpen);
+            if (ptRight.tEmit >= 0) {
+                this.drawBarnDoorAt(ctx, sRight.x, sRight.y, doorH, ptRight.doorsOpen);
             }
         }
 
