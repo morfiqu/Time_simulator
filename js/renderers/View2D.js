@@ -7,6 +7,18 @@
 
 import { SpacetimeMath } from '../core/SpacetimeMath.js';
 
+function hexToRgba(hex, alpha = 1.0) {
+    if (!hex) return `rgba(56, 189, 248, ${alpha})`;
+    if (hex.startsWith('rgb')) return hex;
+    const clean = hex.replace('#', '');
+    const num = parseInt(clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean, 16);
+    if (isNaN(num)) return `rgba(56, 189, 248, ${alpha})`;
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export class View2D {
     constructor(canvasElement, state) {
         this.canvas = canvasElement;
@@ -179,17 +191,18 @@ export class View2D {
         const w = state.width * this.scale;
         const h = state.height * this.scale;
         const rad = (state.rotation * Math.PI) / 180;
+        const col = state.color || shape.color || '#38bdf8';
 
         ctx.save();
         ctx.translate(screen.x, screen.y);
         ctx.rotate(rad);
 
         if (isGhost) {
-            // Призрачный контур (истинное положение)
-            ctx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
+            // Призрачный контур (истинное синхронное положение) с реальным цветом объекта
+            ctx.strokeStyle = hexToRgba(col, 0.75);
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 4]);
-            ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
+            ctx.fillStyle = hexToRgba(col, 0.15);
 
             if (state.type === 'circle') {
                 const r = Math.max(w, h) / 2;
@@ -202,12 +215,12 @@ export class View2D {
                 ctx.strokeRect(-w / 2, -h / 2, w, h);
             }
 
-            // Текстовая метка "Истина (Sync)"
-            ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
+            // Текстовая метка "Истина (Sync)" цвета объекта
+            ctx.fillStyle = hexToRgba(col, 0.9);
             ctx.font = '10px Inter, sans-serif';
             ctx.fillText('Истинное ' + Math.round(state.x), -w / 2, -h / 2 - 5);
         } else {
-            ctx.fillStyle = state.color || shape.color;
+            ctx.fillStyle = col;
             ctx.strokeStyle = state.strokeColor || '#ffffff';
             ctx.lineWidth = state.strokeWidth || 1;
 
@@ -258,15 +271,16 @@ export class View2D {
             const w = pastState.width * this.scale;
             const h = pastState.height * this.scale;
             const rad = (pastState.rotation * Math.PI) / 180;
+            const col = pastState.color || shape.color || '#38bdf8';
 
             ctx.save();
             ctx.translate(screen.x, screen.y);
             ctx.rotate(rad);
 
-            ctx.fillStyle = pastState.color || shape.color;
-            ctx.strokeStyle = '#38bdf8';
-            ctx.lineWidth = 2;
-            ctx.shadowColor = pastState.color || shape.color;
+            ctx.fillStyle = col;
+            ctx.strokeStyle = pastState.strokeColor || col;
+            ctx.lineWidth = pastState.strokeWidth || 2;
+            ctx.shadowColor = col;
             ctx.shadowBlur = 10;
 
             if (shape.type === 'circle') {
@@ -290,9 +304,6 @@ export class View2D {
         const stepX = 1.0;
 
         ctx.save();
-        ctx.fillStyle = shape.color;
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
 
         let activeStripes = [];
 
@@ -315,7 +326,10 @@ export class View2D {
                     sy: screenP.y,
                     topY: screenP.y - halfH,
                     botY: screenP.y + halfH,
-                    doorsOpen: pastState.doorsOpen
+                    doorsOpen: pastState.doorsOpen,
+                    color: pastState.color || shape.color || '#38bdf8',
+                    strokeColor: pastState.strokeColor || pastState.color || shape.color || '#ffffff',
+                    strokeWidth: pastState.strokeWidth || 2
                 });
             }
         }
@@ -345,6 +359,21 @@ export class View2D {
 
         // Если фигура видна в поле зрения светового конуса
         if (activeStripes.length > 0) {
+            const firstStripe = activeStripes[0];
+            const lastStripe = activeStripes[activeStripes.length - 1];
+            const firstColor = firstStripe.color;
+            const lastColor = lastStripe.color;
+
+            // Если цвет меняется вдоль стержня (из-за запаздывания света от ключевых кадров цвета),
+            // создаем плавный линейный градиент или заливку
+            let fillStyle = firstColor;
+            if (firstColor !== lastColor && activeStripes.length > 1) {
+                const grad = ctx.createLinearGradient(firstStripe.sx, 0, lastStripe.sx, 0);
+                grad.addColorStop(0, firstColor);
+                grad.addColorStop(1, lastColor);
+                fillStyle = grad;
+            }
+
             ctx.beginPath();
             // Верхняя граница слева направо
             ctx.moveTo(activeStripes[0].sx, activeStripes[0].topY);
@@ -352,31 +381,31 @@ export class View2D {
                 ctx.lineTo(activeStripes[i].sx, activeStripes[i].topY);
             }
             // Правый торец
-            ctx.lineTo(activeStripes[activeStripes.length - 1].sx, activeStripes[activeStripes.length - 1].botY);
+            ctx.lineTo(lastStripe.sx, lastStripe.botY);
             // Нижняя граница справа налево
             for (let i = activeStripes.length - 2; i >= 0; i--) {
                 ctx.lineTo(activeStripes[i].sx, activeStripes[i].botY);
             }
             ctx.closePath();
 
-            ctx.fillStyle = shape.color;
+            ctx.fillStyle = fillStyle;
             ctx.fill();
 
-            // Неоновая светящаяся обводка
-            ctx.shadowColor = shape.color;
+            // Неоновая светящаяся обводка в цвет фигуры
+            ctx.strokeStyle = firstStripe.strokeColor || firstColor;
+            ctx.lineWidth = firstStripe.strokeWidth || 2;
+            ctx.shadowColor = firstColor;
             ctx.shadowBlur = 10;
             ctx.stroke();
             ctx.shadowBlur = 0;
 
             // Если это сарай, отрисовываем состояние видимых дверей
             if (shape.type === 'barn') {
-                const first = activeStripes[0];
-                const last = activeStripes[activeStripes.length - 1];
-                const h = last.botY - last.topY;
-                const leftScreen = { x: first.sx, y: (first.topY + first.botY) / 2 };
-                const rightScreen = { x: last.sx, y: (last.topY + last.botY) / 2 };
-                this.drawBarnDoorAt(ctx, leftScreen.x, leftScreen.y, h, first.doorsOpen);
-                this.drawBarnDoorAt(ctx, rightScreen.x, rightScreen.y, h, last.doorsOpen);
+                const h = lastStripe.botY - lastStripe.topY;
+                const leftScreen = { x: firstStripe.sx, y: (firstStripe.topY + firstStripe.botY) / 2 };
+                const rightScreen = { x: lastStripe.sx, y: (lastStripe.topY + lastStripe.botY) / 2 };
+                this.drawBarnDoorAt(ctx, leftScreen.x, leftScreen.y, h, firstStripe.doorsOpen);
+                this.drawBarnDoorAt(ctx, rightScreen.x, rightScreen.y, h, lastStripe.doorsOpen);
             }
         }
 

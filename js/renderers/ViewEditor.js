@@ -113,6 +113,9 @@ export class ViewEditor {
             if (e.key === 'c' || e.key === 'C') this.state.setEditorTool('circle');
             if (e.key === 'p' || e.key === 'P') this.state.setEditorTool('pivot');
             if (e.key === 'k' || e.key === 'K') this.captureKeyframe();
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                this.deleteSelectedShape();
+            }
         });
     }
 
@@ -469,14 +472,21 @@ export class ViewEditor {
                 <label>Цвет обводки:</label>
                 <input type="color" id="popup-shape-stroke" value="${stateAtT.strokeColor || shape.strokeColor}">
             </div>
+            <div class="popup-row">
+                <label>Скорость β (v/c):</label>
+                <input type="number" id="popup-shape-beta" step="0.05" value="${shape.betaX ?? 0}">
+            </div>
             <button id="popup-btn-key" class="btn btn-xs btn-primary btn-block mt-2">
                 ◆ Зафиксировать цвет в ключе (t = ${this.state.currentTime.toFixed(2)}s)
+            </button>
+            <button id="popup-btn-delete" class="btn btn-xs btn-danger btn-block mt-2">
+                🗑️ Удалить объект (Del)
             </button>
         `;
 
         const containerRect = this.container.getBoundingClientRect();
         const left = Math.min(containerRect.width - 240, Math.max(10, clientX - containerRect.left + 10));
-        const top = Math.min(containerRect.height - 200, Math.max(10, clientY - containerRect.top + 10));
+        const top = Math.min(containerRect.height - 240, Math.max(10, clientY - containerRect.top + 10));
 
         popup.style.left = `${left}px`;
         popup.style.top = `${top}px`;
@@ -509,6 +519,16 @@ export class ViewEditor {
             this.render();
         });
 
+        const inputBeta = popup.querySelector('#popup-shape-beta');
+        inputBeta.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            if (!isNaN(val)) {
+                shape.setBetaX(val);
+                this.state.emit('shapesUpdated', this.state.shapes);
+                this.render();
+            }
+        });
+
         popup.querySelector('#popup-btn-key').addEventListener('click', () => {
             shape.setKeyframe(this.state.currentTime, {
                 color: inputColor.value,
@@ -517,12 +537,27 @@ export class ViewEditor {
             this.state.emit('shapesUpdated', this.state.shapes);
             this.hidePopup();
         });
+
+        popup.querySelector('#popup-btn-delete').addEventListener('click', () => {
+            this.deleteShape(shape.id);
+        });
     }
 
     hidePopup() {
         if (this.popupEl) {
             this.popupEl.style.display = 'none';
         }
+    }
+
+    deleteShape(id) {
+        this.state.shapes = this.state.shapes.filter(s => s.id !== id);
+        this.state.setShapes(this.state.shapes);
+        this.hidePopup();
+    }
+
+    deleteSelectedShape() {
+        if (!this.state.selectedShapeId) return;
+        this.deleteShape(this.state.selectedShapeId);
     }
 
     hitTestHandles(sx, sy, shape, t) {

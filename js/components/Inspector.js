@@ -1,12 +1,8 @@
 /**
  * Inspector.js
- * Боковая панель свойств: физика пространства-времени, объекты сцены,
- * слои 3D и проекция 2D.
- * Угол светового конуса жестко определяет скорость света c.
- * Скорость фигур задается в долях от скорости света (beta = v/c).
+ * Боковая панель свойств: физика пространства-времени, настройки 3D Минковского и 2D Наблюдателя.
+ * Меню объектов сцены вынесено в интерактивный 2D-редактор кадра.
  */
-
-import { ShapeModel } from '../core/ShapeModel.js';
 
 export class Inspector {
     constructor(containerElement, state) {
@@ -38,88 +34,6 @@ export class Inspector {
                 <div class="control-row" style="margin-top:12px;">
                     <label>Позиция наблюдателя X:</label>
                     <input type="range" id="slider-obs-x" min="-180" max="180" step="5" value="${this.state.observer.x}">
-                </div>
-            </div>
-
-            <div class="panel-section">
-                <div class="section-header-flex">
-                    <h3 class="section-title">📦 Объекты сцены</h3>
-                    <div class="btn-group-sm">
-                        <button id="btn-add-rod" class="btn btn-xs btn-primary">+ Стержень</button>
-                        <button id="btn-add-barn" class="btn btn-xs btn-outline">+ Сарай</button>
-                    </div>
-                </div>
-
-                <div id="shapes-list" class="shapes-list"></div>
-
-                <div id="shape-props-box" class="shape-props-box" style="display:none;">
-                    <div class="control-row">
-                        <label>Имя:</label>
-                        <input type="text" id="prop-shape-name" class="input-text-sm">
-                    </div>
-
-                    <div class="control-row">
-                        <label>Цвет:</label>
-                        <input type="color" id="prop-shape-color" class="input-color-sm">
-                    </div>
-
-                    <div class="control-row">
-                        <label>Скорость (в долях от скорости света c, β = v/c):</label>
-                        <div class="slider-val-group">
-                            <input type="range" id="slider-shape-beta" min="-1.0" max="1.0" step="0.01" value="0.75">
-                            <span id="val-shape-beta" class="val-badge">0.75 c</span>
-                        </div>
-                        <div style="margin-top:6px;">
-                            <label style="font-size:10px; color:#94a3b8;">Точное значение β (любое число, без ограничений):</label>
-                            <input type="number" id="prop-shape-beta-input" class="input-num-sm" step="0.05" style="width:100%;" placeholder="например 0.1, 0.85 или 1.5">
-                        </div>
-                    </div>
-
-                    <div class="control-row-grid" style="margin-top:10px;">
-                        <div>
-                            <label>X₀ (старт):</label>
-                            <input type="number" id="prop-shape-x0" class="input-num-sm" step="5">
-                        </div>
-                        <div>
-                            <label>Ширина L₀:</label>
-                            <input type="number" id="prop-shape-w" class="input-num-sm" min="10" max="300" step="5">
-                        </div>
-                    </div>
-
-                    <div class="control-row">
-                        <label>Высота H:</label>
-                        <input type="number" id="prop-shape-h" class="input-num-sm" min="6" max="100" step="2" style="width:100%;">
-                    </div>
-
-                    <div class="control-row-grid" style="margin-top:6px;">
-                        <div>
-                            <label>Вращение (°):</label>
-                            <input type="number" id="prop-shape-rot" class="input-num-sm" step="5" value="0">
-                        </div>
-                        <div>
-                            <label>Обводка:</label>
-                            <input type="color" id="prop-shape-stroke" class="input-color-sm" value="#ffffff">
-                        </div>
-                    </div>
-
-                    <div class="control-row-grid">
-                        <div>
-                            <label>Пивот dX:</label>
-                            <input type="number" id="prop-shape-pivot-x" class="input-num-sm" step="5" value="0">
-                        </div>
-                        <div>
-                            <label>Пивот dY:</label>
-                            <input type="number" id="prop-shape-pivot-y" class="input-num-sm" step="5" value="0">
-                        </div>
-                    </div>
-
-                    <button id="btn-shape-add-key" class="btn btn-xs btn-primary btn-block mt-2">
-                        ◆ Зафиксировать ключ (t = <span id="val-cur-time-label">0.00</span>s)
-                    </button>
-
-                    <button id="btn-delete-shape" class="btn btn-xs btn-danger btn-block mt-2">
-                        Удалить объект
-                    </button>
                 </div>
             </div>
 
@@ -214,26 +128,6 @@ export class Inspector {
             valC: this.container.querySelector('#val-c'),
             sliderObsX: this.container.querySelector('#slider-obs-x'),
 
-            btnAddRod: this.container.querySelector('#btn-add-rod'),
-            btnAddBarn: this.container.querySelector('#btn-add-barn'),
-            shapesList: this.container.querySelector('#shapes-list'),
-            shapePropsBox: this.container.querySelector('#shape-props-box'),
-            propName: this.container.querySelector('#prop-shape-name'),
-            propColor: this.container.querySelector('#prop-shape-color'),
-            sliderShapeBeta: this.container.querySelector('#slider-shape-beta'),
-            valShapeBeta: this.container.querySelector('#val-shape-beta'),
-            propShapeBetaInput: this.container.querySelector('#prop-shape-beta-input'),
-            propX0: this.container.querySelector('#prop-shape-x0'),
-            propW: this.container.querySelector('#prop-shape-w'),
-            propH: this.container.querySelector('#prop-shape-h'),
-            propRot: this.container.querySelector('#prop-shape-rot'),
-            propStroke: this.container.querySelector('#prop-shape-stroke'),
-            propPivotX: this.container.querySelector('#prop-shape-pivot-x'),
-            propPivotY: this.container.querySelector('#prop-shape-pivot-y'),
-            btnShapeAddKey: this.container.querySelector('#btn-shape-add-key'),
-            valCurTimeLabel: this.container.querySelector('#val-cur-time-label'),
-            btnDeleteShape: this.container.querySelector('#btn-delete-shape'),
-
             chkHardCut: this.container.querySelector('#chk-hard-cut'),
             propFrameBg: this.container.querySelector('#prop-frame-bg'),
             valFrameBg: this.container.querySelector('#val-frame-bg'),
@@ -252,9 +146,6 @@ export class Inspector {
             select2DMode: this.container.querySelector('#select-2d-mode'),
             chkMeasurement: this.container.querySelector('#chk-measurement')
         };
-
-        this.renderShapesList();
-        this.updateShapeProps();
     }
 
     bindEvents() {
@@ -264,7 +155,6 @@ export class Inspector {
             this.dom.valConeAngle.textContent = `${angle}°`;
             this.state.setConeAngle(angle);
             this.dom.valC.textContent = `${this.state.speedOfLight.toFixed(1)} px/s`;
-            this.updateShapeProps();
         });
 
         // Положение наблюдателя
@@ -272,118 +162,6 @@ export class Inspector {
             this.state.observer.x = parseFloat(e.target.value);
             this.state.emit('settingsChanged', this.state.settings);
             this.state.emit('timeUpdated', this.state.currentTime);
-        });
-
-        // Добавление стержня
-        this.dom.btnAddRod.addEventListener('click', () => {
-            const newShape = new ShapeModel({
-                name: 'Новый стержень',
-                type: 'rod',
-                color: '#34d399',
-                x0: -180,
-                betaX: 0.6,
-                speedOfLight: this.state.speedOfLight,
-                width: 60,
-                height: 20
-            });
-            this.state.shapes.push(newShape);
-            this.state.setShapes(this.state.shapes);
-            this.state.selectShape(newShape.id);
-        });
-
-        // Добавление сарая
-        this.dom.btnAddBarn.addEventListener('click', () => {
-            const newShape = new ShapeModel({
-                name: 'Сарай',
-                type: 'barn',
-                color: '#fbbf24',
-                x0: 0,
-                betaX: 0.0,
-                speedOfLight: this.state.speedOfLight,
-                width: 100,
-                height: 45
-            });
-            this.state.shapes.push(newShape);
-            this.state.setShapes(this.state.shapes);
-            this.state.selectShape(newShape.id);
-        });
-
-        // Редактирование скорости через ползунок beta
-        this.dom.sliderShapeBeta.addEventListener('input', (e) => {
-            const shape = this.state.getSelectedShape();
-            if (!shape) return;
-            const beta = parseFloat(e.target.value);
-            shape.setBetaX(beta);
-            this.dom.propShapeBetaInput.value = beta;
-            this.dom.valShapeBeta.textContent = `${beta.toFixed(2)} c`;
-            this.state.emit('shapesUpdated', this.state.shapes);
-        });
-
-        // Редактирование скорости через свободное числовое поле ввода (без ограничений)
-        this.dom.propShapeBetaInput.addEventListener('input', (e) => {
-            const shape = this.state.getSelectedShape();
-            if (!shape) return;
-            const val = parseFloat(e.target.value);
-            if (!isNaN(val)) {
-                shape.setBetaX(val);
-                if (val >= -1.0 && val <= 1.0) {
-                    this.dom.sliderShapeBeta.value = val;
-                }
-                this.dom.valShapeBeta.textContent = `${val.toFixed(2)} c`;
-                this.state.emit('shapesUpdated', this.state.shapes);
-            }
-        });
-
-        // Редактирование остальных свойств фигуры
-        const updateCurrentShape = () => {
-            const shape = this.state.getSelectedShape();
-            if (!shape) return;
-            shape.name = this.dom.propName.value;
-            shape.color = this.dom.propColor.value;
-            shape.strokeColor = this.dom.propStroke.value;
-            shape.x0 = parseFloat(this.dom.propX0.value) || 0;
-            shape.width = parseFloat(this.dom.propW.value) || 10;
-            shape.height = parseFloat(this.dom.propH.value) || 10;
-            shape.rotation = parseFloat(this.dom.propRot.value) || 0;
-            shape.pivotX = parseFloat(this.dom.propPivotX.value) || 0;
-            shape.pivotY = parseFloat(this.dom.propPivotY.value) || 0;
-            this.renderShapesList();
-            this.state.emit('shapesUpdated', this.state.shapes);
-        };
-
-        this.dom.propName.addEventListener('input', updateCurrentShape);
-        this.dom.propColor.addEventListener('input', updateCurrentShape);
-        this.dom.propStroke.addEventListener('input', updateCurrentShape);
-        this.dom.propX0.addEventListener('input', updateCurrentShape);
-        this.dom.propW.addEventListener('input', updateCurrentShape);
-        this.dom.propH.addEventListener('input', updateCurrentShape);
-        this.dom.propRot.addEventListener('input', updateCurrentShape);
-        this.dom.propPivotX.addEventListener('input', updateCurrentShape);
-        this.dom.propPivotY.addEventListener('input', updateCurrentShape);
-
-        this.dom.btnShapeAddKey.addEventListener('click', () => {
-            const shape = this.state.getSelectedShape();
-            if (shape) {
-                const t = this.state.currentTime;
-                shape.setKeyframe(t, {
-                    x: shape.x0,
-                    y: shape.y0,
-                    rotation: shape.rotation,
-                    pivotX: shape.pivotX,
-                    pivotY: shape.pivotY,
-                    color: shape.color,
-                    strokeColor: shape.strokeColor
-                });
-                this.state.emit('shapesUpdated', this.state.shapes);
-            }
-        });
-
-        // Удаление фигуры
-        this.dom.btnDeleteShape.addEventListener('click', () => {
-            const shape = this.state.getSelectedShape();
-            if (!shape) return;
-            this.state.shapes = this.state.shapes.filter(s => s.id !== shape.id);
-            this.state.setShapes(this.state.shapes);
         });
 
         // Настройки 3D
@@ -445,22 +223,6 @@ export class Inspector {
         });
 
         // Слушатели событий состояния
-        this.state.on('timeUpdated', (t) => {
-            if (this.dom.valCurTimeLabel) {
-                this.dom.valCurTimeLabel.textContent = t.toFixed(2);
-            }
-        });
-
-        this.state.on('shapesUpdated', () => {
-            this.renderShapesList();
-            this.updateShapeProps();
-        });
-
-        this.state.on('shapeSelected', () => {
-            this.renderShapesList();
-            this.updateShapeProps();
-        });
-
         this.state.on('settingsChanged', () => {
             this.dom.sliderConeAngle.value = this.state.settings.coneAngle;
             this.dom.valConeAngle.textContent = `${this.state.settings.coneAngle}°`;
@@ -476,53 +238,6 @@ export class Inspector {
                 this.dom.prop3dBg.value = this.state.settings.bg3DColor || '#070c18';
                 this.dom.val3dBg.textContent = this.state.settings.bg3DColor || '#070c18';
             }
-            this.updateShapeProps();
         });
-    }
-
-    renderShapesList() {
-        const list = this.dom.shapesList;
-        list.innerHTML = '';
-
-        this.state.shapes.forEach(shape => {
-            const item = document.createElement('div');
-            item.className = `shape-item ${shape.id === this.state.selectedShapeId ? 'active' : ''}`;
-            const betaStr = (shape.betaX !== undefined ? shape.betaX.toFixed(2) : '0') + 'c';
-            const typeLabel = shape.type === 'circle' ? 'Круг' : (shape.type === 'barn' ? 'Сарай' : 'Прямоуг');
-            item.innerHTML = `
-                <span class="shape-badge-color" style="background:${shape.color};"></span>
-                <span class="shape-item-name">${shape.name}</span>
-                <span class="shape-item-type">${shape.keyframes && shape.keyframes.length > 0 ? 'Анимация' : betaStr} (${typeLabel})</span>
-            `;
-            item.addEventListener('click', () => {
-                this.state.selectShape(shape.id);
-            });
-            list.appendChild(item);
-        });
-    }
-
-    updateShapeProps() {
-        const shape = this.state.getSelectedShape();
-        if (!shape) {
-            this.dom.shapePropsBox.style.display = 'none';
-            return;
-        }
-
-        this.dom.shapePropsBox.style.display = 'block';
-        this.dom.propName.value = shape.name;
-        this.dom.propColor.value = shape.color;
-        if (this.dom.propStroke) this.dom.propStroke.value = shape.strokeColor || '#ffffff';
-        this.dom.propX0.value = shape.x0;
-        this.dom.propW.value = shape.width;
-        this.dom.propH.value = shape.height;
-        if (this.dom.propRot) this.dom.propRot.value = shape.rotation ?? 0;
-        if (this.dom.propPivotX) this.dom.propPivotX.value = shape.pivotX ?? 0;
-        if (this.dom.propPivotY) this.dom.propPivotY.value = shape.pivotY ?? 0;
-
-        const beta = shape.betaX ?? 0;
-        this.dom.sliderShapeBeta.value = Math.max(-1.0, Math.min(1.0, beta));
-        this.dom.propShapeBetaInput.value = beta;
-        const absVx = (beta * this.state.speedOfLight).toFixed(1);
-        this.dom.valShapeBeta.textContent = `${beta.toFixed(2)} c (${absVx} px/s)`;
     }
 }
