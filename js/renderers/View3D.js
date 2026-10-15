@@ -390,12 +390,23 @@ export class View3D {
         const dt = this.state.duration / steps;
 
         this.state.shapes.forEach(shape => {
-            const corners = [
-                [-0.5, -0.5],
-                [0.5, -0.5],
-                [0.5, 0.5],
-                [-0.5, 0.5]
-            ];
+            // Контур поперечного сечения: для кругов 32 радиальных сегмента (гладкий цилиндр), для прямоугольников 4 угла
+            let contour = [];
+            if (shape.type === 'circle') {
+                const segs = 32;
+                for (let i = 0; i < segs; i++) {
+                    const angle = (i / segs) * Math.PI * 2;
+                    contour.push([0.5 * Math.cos(angle), 0.5 * Math.sin(angle)]);
+                }
+            } else {
+                contour = [
+                    [-0.5, -0.5],
+                    [0.5, -0.5],
+                    [0.5, 0.5],
+                    [-0.5, 0.5]
+                ];
+            }
+            const numPts = contour.length;
 
             const vertices = [];
             const indices = [];
@@ -409,7 +420,7 @@ export class View3D {
                 const cos = Math.cos(rad);
                 const sin = Math.sin(rad);
 
-                corners.forEach(([sx, sz]) => {
+                contour.forEach(([sx, sz]) => {
                     const localX = sx * s.width;
                     const localZ = sz * s.height;
                     const rotX = localX * cos - localZ * sin;
@@ -418,15 +429,24 @@ export class View3D {
                 });
 
                 if (step > 0) {
-                    const prevRow = (step - 1) * 4;
-                    const currRow = step * 4;
+                    const prevRow = (step - 1) * numPts;
+                    const currRow = step * numPts;
 
-                    for (let c = 0; c < 4; c++) {
-                        const nextC = (c + 1) % 4;
+                    for (let c = 0; c < numPts; c++) {
+                        const nextC = (c + 1) % numPts;
                         indices.push(prevRow + c, currRow + c, prevRow + nextC);
                         indices.push(prevRow + nextC, currRow + c, currRow + nextC);
                     }
                 }
+            }
+
+            // Торцевые крышки мировой трубки (дно t=0 и вершина t=duration)
+            for (let i = 1; i < numPts - 1; i++) {
+                indices.push(0, i + 1, i);
+            }
+            const topBase = steps * numPts;
+            for (let i = 1; i < numPts - 1; i++) {
+                indices.push(topBase, topBase + i, topBase + i + 1);
             }
 
             const tubeGeo = new THREE.BufferGeometry();
