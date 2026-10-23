@@ -51,6 +51,7 @@ export class ShapeModel {
         // Скорость движения без ключевых кадров
         this.betaX = config.betaX ?? (config.vx !== undefined ? (config.vx / this.speedOfLight) : 0);
         this.betaY = config.betaY ?? 0;
+        this.accelTime = config.accelTime ?? null; // Индивидуальное время разгона (если null — берется глобальное ShapeModel.accelDuration)
 
         // Размеры
         this.width = config.width ?? (config.radius ? config.radius * 2 : 60);
@@ -97,6 +98,34 @@ export class ShapeModel {
     }
 
     /**
+     * Расчет коэффициента текущей скорости и пройденного пути с учетом плавного разгона (t_acc)
+     */
+    _calcMotionProfile(dt, accelTime) {
+        if (dt <= 0) {
+            return { velScale: 0, distTime: 0 };
+        }
+        const tAcc = Math.max(0, accelTime ?? ShapeModel.accelDuration ?? 0);
+        if (tAcc <= 0.001) {
+            return { velScale: 1.0, distTime: dt };
+        }
+        if (dt < tAcc) {
+            // Линейное нарастание скорости от 0 до v_max за время tAcc:
+            // v(dt) = v_max * (dt / tAcc), интеграл пути = v_max * (dt^2 / (2 * tAcc))
+            const ratio = dt / tAcc;
+            return {
+                velScale: ratio,
+                distTime: 0.5 * dt * ratio
+            };
+        } else {
+            // После завершения разгона: равномерное движение со скоростью v_max
+            return {
+                velScale: 1.0,
+                distTime: dt - 0.5 * tAcc
+            };
+        }
+    }
+
+    /**
      * Получение состояния объекта в произвольный момент времени t.
      */
     getStateAt(t, customC = null) {
@@ -118,6 +147,7 @@ export class ShapeModel {
         let strokeColor = this.strokeColor;
         let strokeWidth = this.strokeWidth;
         let doorsOpen = true;
+        let startTime = 0;
 
         if (this.keyframes && this.keyframes.length === 1) {
             const k0 = this.keyframes[0];
@@ -132,14 +162,25 @@ export class ShapeModel {
             strokeColor = k0.strokeColor ?? strokeColor;
             strokeWidth = k0.strokeWidth ?? strokeWidth;
             doorsOpen = k0.doorsOpen ?? doorsOpen;
+            startTime = k0.time ?? 0;
         }
 
-        // Движение по постоянной скорости: x(t) = x0 + (beta * c) * t
-        const currentVx = (this.betaX || 0) * c;
-        const currentVy = (this.betaY || 0) * c;
+        // Расчет профиля плавного разгона от момента старта startTime
+        const dt = t - startTime;
+        const profile = this._calcMotionProfile(dt, this.accelTime);
 
-        const xBase = x0 + currentVx * t;
-        const yBase = y0 + currentVy * t;
+        const targetBetaX = this.betaX || 0;
+        const targetBetaY = this.betaY || 0;
+        const instBetaX = targetBetaX * profile.velScale;
+        const instBetaY = targetBetaY * profile.velScale;
+
+        const targetVx = targetBetaX * c;
+        const targetVy = targetBetaY * c;
+        const currentVx = instBetaX * c;
+        const currentVy = instBetaY * c;
+
+        const xBase = x0 + targetVx * profile.distTime;
+        const yBase = y0 + targetVy * profile.distTime;
 
         // Расчет мировой позиции с учетом смещения пивота и вращения (орбита)
         const pivotWorldX = xBase + pX;
@@ -156,16 +197,16 @@ export class ShapeModel {
             doorsOpen = (t < this.doorsCloseTime || t > this.doorsOpenTime);
         }
 
-        // Релятивистский расчет сокращения длины (Lorentz Contraction в 2D)
-        const betaX = this.betaX ?? 0;
-        const betaY = this.betaY ?? 0;
+        // Релятивистский расчет сокращения длины по МГНОВЕННОЙ скорости (плавное сжатие при разгоне)
+        const betaX = instBetaX;
+        const betaY = instBetaY;
         const betaMag = Math.min(0.999, Math.hypot(betaX, betaY));
         const lorentzFactor = Math.sqrt(Math.max(0.001, 1 - betaMag * betaMag)); // 1 / gamma
         const gamma = 1 / lorentzFactor;
 
         const isLorentz = ShapeModel.lorentzEnabled && (this.lorentzContraction ?? true);
 
-        // Проекция скорости на локальные оси фигуры (с учетом угла вращения rot):
+        // Проекция мгновенной скорости на локальные оси фигуры (с учетом угла вращения rot):
         const betaU = betaX * cos + betaY * sin;
         const betaV = -betaX * sin + betaY * cos;
 
@@ -201,6 +242,9 @@ export class ShapeModel {
             beta: betaMag,
             betaX,
             betaY,
+            targetBetaX,
+            targetBetaY,
+            velScale: profile.velScale,
             lorentzFactor: lorentzFactor,
             kU,
             kV,
@@ -214,55 +258,90 @@ export class ShapeModel {
         }
 
         let k1, k2, alpha;
-        let vX_kf = 0;
-        let vY_kf = 0;
+        let currentVx = 0;
+        let currentVy = 0;
+        let xBase = 0;
+        let yBase = 0;
 
-        if (this.keyframes.length === 1 || t <= this.keyframes[0].time) {
-            k1 = this.keyframes[0];
-            k2 = this.keyframes[0];
+        const first = this.keyframes[0];
+        const last = this.keyframes[this.keyframes.length - 1];
+        const tAcc = Math.max(0, this.accelTime ?? ShapeModel.accelDuration ?? 0);
+
+        if (this.keyframes.length === 1 || t <= first.time) {
+            k1 = first;
+            k2 = first;
             alpha = 0;
-            vX_kf = (this.betaX || 0) * c;
-            vY_kf = (this.betaY || 0) * c;
-        } else if (t >= this.keyframes[this.keyframes.length - 1].time) {
-            const last = this.keyframes[this.keyframes.length - 1];
+            const dt = t - first.time;
+            const profile = this._calcMotionProfile(dt, tAcc);
+            const targetVx = (this.betaX || 0) * c;
+            const targetVy = (this.betaY || 0) * c;
+            currentVx = targetVx * profile.velScale;
+            currentVy = targetVy * profile.velScale;
+            xBase = first.x + targetVx * profile.distTime;
+            yBase = first.y + targetVy * profile.distTime;
+        } else if (t >= last.time) {
             k1 = last;
             k2 = last;
             alpha = 1;
-            vX_kf = (this.betaX || 0) * c;
-            vY_kf = (this.betaY || 0) * c;
+            const dt = t - last.time;
+            const profile = this._calcMotionProfile(dt, tAcc);
+            const targetVx = (this.betaX || 0) * c;
+            const targetVy = (this.betaY || 0) * c;
+            currentVx = targetVx * profile.velScale;
+            currentVy = targetVy * profile.velScale;
+            xBase = last.x + targetVx * profile.distTime;
+            yBase = last.y + targetVy * profile.distTime;
         } else {
             for (let i = 0; i < this.keyframes.length - 1; i++) {
                 if (t >= this.keyframes[i].time && t <= this.keyframes[i + 1].time) {
                     k1 = this.keyframes[i];
                     k2 = this.keyframes[i + 1];
                     const range = k2.time - k1.time;
-                    alpha = range > 0 ? (t - k1.time) / range : 0;
-                    if (range > 0.001) {
-                        vX_kf = (k2.x - k1.x) / range;
-                        vY_kf = (k2.y - k1.y) / range;
+                    const u = range > 0 ? (t - k1.time) / range : 0;
+
+                    // Плавный профиль скорости внутри сегмента (трапецеидальный разгон/торможение)
+                    const tau = range > 0 ? Math.min(0.45, tAcc / range) : 0;
+                    let posAlpha = u;
+                    let velFactor = 1.0;
+
+                    if (tau > 0.001) {
+                        const vPeak = 1.0 / (1.0 - tau);
+                        if (u < tau) {
+                            velFactor = vPeak * (u / tau);
+                            posAlpha = 0.5 * vPeak * (u * u) / tau;
+                        } else if (u > 1.0 - tau) {
+                            const rem = 1.0 - u;
+                            velFactor = vPeak * (rem / tau);
+                            posAlpha = 1.0 - 0.5 * vPeak * (rem * rem) / tau;
+                        } else {
+                            velFactor = vPeak;
+                            posAlpha = vPeak * (u - 0.5 * tau);
+                        }
+                    }
+
+                    alpha = posAlpha;
+                    const dx = k2.x - k1.x;
+                    const dy = k2.y - k1.y;
+
+                    if (range > 0.001 && (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01)) {
+                        currentVx = (dx / range) * velFactor;
+                        currentVy = (dy / range) * velFactor;
+                        xBase = k1.x + dx * posAlpha;
+                        yBase = k1.y + dy * posAlpha;
+                    } else {
+                        // Если ключи на одном месте, но задана betaX/betaY
+                        const dt = t - k1.time;
+                        const profile = this._calcMotionProfile(dt, tAcc);
+                        const targetVx = (this.betaX || 0) * c;
+                        const targetVy = (this.betaY || 0) * c;
+                        currentVx = targetVx * profile.velScale;
+                        currentVy = targetVy * profile.velScale;
+                        xBase = k1.x + targetVx * profile.distTime;
+                        yBase = k1.y + targetVy * profile.distTime;
                     }
                     break;
                 }
             }
-        }
-
-        // Если ключевые кадры не задают перемещения, используем betaX
-        let currentVx = vX_kf;
-        let currentVy = vY_kf;
-        if (Math.abs(vX_kf) < 0.001 && Math.abs(this.betaX || 0) > 0.001) {
-            currentVx = (this.betaX || 0) * c;
-        }
-        if (Math.abs(vY_kf) < 0.001 && Math.abs(this.betaY || 0) > 0.001) {
-            currentVy = (this.betaY || 0) * c;
-        }
-
-        let xBase = k1.x + (k2.x - k1.x) * alpha;
-        let yBase = k1.y + (k2.y - k1.y) * alpha;
-        if (k1 === k2 && Math.abs(currentVx) > 0.001) {
-            xBase += currentVx * (t - k1.time);
-        }
-        if (k1 === k2 && Math.abs(currentVy) > 0.001) {
-            yBase += currentVy * (t - k1.time);
         }
 
         const rot = (k1.rotation ?? 0) + ((k2.rotation ?? 0) - (k1.rotation ?? 0)) * alpha;
@@ -374,6 +453,7 @@ export class ShapeModel {
 }
 
 ShapeModel.lorentzEnabled = true;
+ShapeModel.accelDuration = 0.8;
 
 /**
  * Библиотека готовых пресетов

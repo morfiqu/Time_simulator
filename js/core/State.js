@@ -53,6 +53,7 @@ export class AppState {
             view2DMode: 'both',         // 'retarded', 'instant', 'both'
             showMeasurement: true,      // Измерение кажущейся длины стержня
             lorentzContraction: true,   // Релятивистское лоренцево сокращение длины (L = L0 * sqrt(1 - beta^2))
+            accelDuration: 0.8,         // Время плавного разгона объектов в секундах (0 = мгновенно)
             coneResolution: 48          // Детализация конуса
         };
 

@@ -51,6 +51,16 @@ export class Inspector {
             <div class="panel-section">
                 <h3 class="section-title">📐 Лоренцево сжатие (4-скорость)</h3>
                 <div id="lorentz-diagram-box"></div>
+                <div class="control-row" style="margin-top: 10px;">
+                    <label>Время плавного разгона (t_acc):</label>
+                    <div class="slider-val-group">
+                        <input type="range" id="slider-accel-duration" min="0" max="3.0" step="0.1" value="${this.state.settings.accelDuration ?? 0.8}">
+                        <span id="val-accel-duration" class="val-badge">${(this.state.settings.accelDuration ?? 0.8).toFixed(1)}s</span>
+                    </div>
+                    <div class="param-subtext" style="margin-top:4px; font-size:10px; color:#64748b;">
+                        Плавный выход от 0 до целевой скорости β (без мгновенного скачка сжатия)
+                    </div>
+                </div>
                 <div class="control-checkbox-row" style="margin-top: 10px; background: rgba(56, 189, 248, 0.08); padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2);">
                     <label style="cursor: pointer; font-size: 11px; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
                         <input type="checkbox" id="chk-lorentz-contraction" ${this.state.settings.lorentzContraction ? 'checked' : ''}>
@@ -167,7 +177,9 @@ export class Inspector {
             chkLightCone: this.container.querySelector('#chk-light-cone'),
             select2DMode: this.container.querySelector('#select-2d-mode'),
             chkMeasurement: this.container.querySelector('#chk-measurement'),
-            chkLorentzContraction: this.container.querySelector('#chk-lorentz-contraction')
+            chkLorentzContraction: this.container.querySelector('#chk-lorentz-contraction'),
+            sliderAccelDuration: this.container.querySelector('#slider-accel-duration'),
+            valAccelDuration: this.container.querySelector('#val-accel-duration')
         };
     }
 
@@ -249,6 +261,16 @@ export class Inspector {
             this.dom.chkLorentzContraction.addEventListener('change', (e) => {
                 ShapeModel.lorentzEnabled = e.target.checked;
                 this.state.updateSetting('lorentzContraction', e.target.checked);
+                this.state.emit('shapesUpdated', this.state.shapes);
+            });
+        }
+
+        if (this.dom.sliderAccelDuration) {
+            this.dom.sliderAccelDuration.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                this.dom.valAccelDuration.textContent = `${val.toFixed(1)}s`;
+                ShapeModel.accelDuration = val;
+                this.state.updateSetting('accelDuration', val);
                 this.state.emit('shapesUpdated', this.state.shapes);
             });
         }

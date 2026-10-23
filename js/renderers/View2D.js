@@ -250,65 +250,91 @@ export class View2D {
     }
 
     /**
-     * Расчет точного положения и времени испускания для любой материальной точки фигуры
+     * Расчет мировой позиции материальной точки с нормированными локальными координатами (normU, normV в [-0.5, 0.5])
+     * в произвольный момент времени t. Учитывает и плавное движение, и мгновенное лоренцево сжатие в момент t!
      */
-    getRetardedPoint(shape, localU, localV, tCurr, obs, c, stateInstant) {
-        const rad = (stateInstant.rotation * Math.PI) / 180;
+    getMaterialPointAtTime(shape, normU, normV, t, c) {
+        const s = shape.getStateAt(Math.max(0, t), c);
+        const localU = normU * s.width;
+        const localV = normV * s.height;
+        const rad = (s.rotation * Math.PI) / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
 
-        // Текущая мировая позиция этой материальной точки в момент tCurr:
-        const xCurr = stateInstant.x + (localU * cos - localV * sin);
-        const yCurr = stateInstant.y + (localU * sin + localV * cos);
+        return {
+            x: s.x + (localU * cos - localV * sin),
+            y: s.y + (localU * sin + localV * cos),
+            color: s.color || shape.color,
+            doorsOpen: s.doorsOpen
+        };
+    }
 
-        // Вектор от наблюдателя к текущей позиции точки:
-        const Dx = xCurr - obs.x;
-        const Dy = yCurr - obs.y;
-        const distSq = Dx * Dx + Dy * Dy;
-
-        const vx = stateInstant.vx || 0;
-        const vy = stateInstant.vy || 0;
-        const vSq = vx * vx + vy * vy;
-
-        let tau = 0;
-        if (vSq < 0.001 || c <= 0) {
-            // Неподвижный объект
-            tau = Math.sqrt(distSq) / c;
-        } else {
-            // Движущийся объект: точное решение релятивистского уравнения запаздывания
-            const D_dot_v = Dx * vx + Dy * vy;
-            const A = Math.max(0.001, c * c - vSq);
-            const disc = D_dot_v * D_dot_v + A * distSq;
-            tau = (-D_dot_v + Math.sqrt(Math.max(0, disc))) / A;
+    /**
+     * Расчет точного положения и времени испускания для любой материальной точки фигуры
+     * методом поиска пересечения мировой линии точки со световым конусом прошлого наблюдателя:
+     * distance(P(tEmit), obs) = c * (tCurr - tEmit)
+     */
+    getRetardedPoint(shape, normU, normV, tCurr, obs, c, stateInstant) {
+        if (c <= 0 || !isFinite(c) || tCurr <= 0) {
+            const ptNow = this.getMaterialPointAtTime(shape, normU, normV, tCurr, c);
+            return {
+                worldX: ptNow.x,
+                worldY: ptNow.y,
+                tEmit: tCurr,
+                tau: 0,
+                isInsideHorizon: tCurr >= 0,
+                color: ptNow.color,
+                doorsOpen: ptNow.doorsOpen
+            };
         }
 
-        const tEmit = tCurr - tau;
+        // Проверяем, успел ли дойти свет хотя бы от положения точки в момент t = 0
+        const pt0 = this.getMaterialPointAtTime(shape, normU, normV, 0, c);
+        const dist0 = Math.hypot(pt0.x - obs.x, pt0.y - obs.y);
+        const f0 = dist0 - c * tCurr;
 
-        let xEmit, yEmit, col, doorsOpen;
-        if (shape.keyframes && shape.keyframes.length > 1) {
-            const pastS = shape.getStateAt(Math.max(0, tEmit), c);
-            const pastRad = (pastS.rotation * Math.PI) / 180;
-            const pCos = Math.cos(pastRad);
-            const pSin = Math.sin(pastRad);
-            xEmit = pastS.x + (localU * pCos - localV * pSin);
-            yEmit = pastS.y + (localU * pSin + localV * pCos);
-            col = pastS.color || shape.color;
-            doorsOpen = pastS.doorsOpen;
-        } else {
-            xEmit = xCurr - vx * tau;
-            yEmit = yCurr - vy * tau;
-            col = stateInstant.color || shape.color;
-            doorsOpen = stateInstant.doorsOpen;
+        if (f0 > 0) {
+            // Даже при tEmit = 0 свет ещё не дошёл до наблюдателя (tEmit < 0)
+            const tEmitApprox = tCurr - dist0 / c;
+            return {
+                worldX: pt0.x,
+                worldY: pt0.y,
+                tEmit: tEmitApprox,
+                tau: tCurr - tEmitApprox,
+                isInsideHorizon: false,
+                color: pt0.color,
+                doorsOpen: pt0.doorsOpen
+            };
         }
+
+        // В момент t = tCurr функция f(tCurr) = dist(P(tCurr), obs) >= 0.
+        // Значит на отрезке [0, tCurr] гарантированно есть корень уравнения dist(P(t), obs) - c*(tCurr - t) = 0.
+        // Находим его за 14 итераций бисекции (точность ~ 10^-5 с):
+        let low = 0.0;
+        let high = tCurr;
+        for (let iter = 0; iter < 14; iter++) {
+            const mid = 0.5 * (low + high);
+            const ptMid = this.getMaterialPointAtTime(shape, normU, normV, mid, c);
+            const distMid = Math.hypot(ptMid.x - obs.x, ptMid.y - obs.y);
+            const fMid = distMid - c * (tCurr - mid);
+            if (fMid <= 0) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+
+        const tEmit = 0.5 * (low + high);
+        const ptEmit = this.getMaterialPointAtTime(shape, normU, normV, tEmit, c);
 
         return {
-            worldX: xEmit,
-            worldY: yEmit,
+            worldX: ptEmit.x,
+            worldY: ptEmit.y,
             tEmit,
-            tau,
-            isInsideHorizon: (tEmit >= 0),
-            color: col,
-            doorsOpen
+            tau: tCurr - tEmit,
+            isInsideHorizon: true,
+            color: ptEmit.color,
+            doorsOpen: ptEmit.doorsOpen
         };
     }
 
@@ -333,50 +359,46 @@ export class View2D {
             return;
         }
 
-        // Строим 2D-полигон запаздывающих граничных точек фигуры
+        // Строим 2D-полигон запаздывающих граничных точек фигуры в нормированных координатах [-0.5, 0.5]
         const vertices = [];
         if (shape.type === 'circle') {
             const N = 48;
-            const rx = stateInstant.width / 2;
-            const ry = stateInstant.height / 2;
             for (let i = 0; i < N; i++) {
                 const angle = (i / N) * Math.PI * 2;
-                const u = rx * Math.cos(angle);
-                const v = ry * Math.sin(angle);
-                vertices.push(this.getRetardedPoint(shape, u, v, tCurr, obs, c, stateInstant));
+                const normU = 0.5 * Math.cos(angle);
+                const normV = 0.5 * Math.sin(angle);
+                vertices.push(this.getRetardedPoint(shape, normU, normV, tCurr, obs, c, stateInstant));
             }
         } else {
-            const halfW = stateInstant.width / 2;
-            const halfH = stateInstant.height / 2;
             const segX = 16;
             const segY = 16;
 
-            // Верхняя грань: слева направо (v = -halfH, u от -halfW до +halfW)
+            // Верхняя грань: слева направо (normV = -0.5, normU от -0.5 до +0.5)
             for (let i = 0; i <= segX; i++) {
-                const u = -halfW + (i / segX) * (2 * halfW);
-                vertices.push(this.getRetardedPoint(shape, u, -halfH, tCurr, obs, c, stateInstant));
+                const normU = -0.5 + (i / segX);
+                vertices.push(this.getRetardedPoint(shape, normU, -0.5, tCurr, obs, c, stateInstant));
             }
-            // Правая грань: сверху вниз (u = +halfW, v от -halfH до +halfH)
+            // Правая грань: сверху вниз (normU = +0.5, normV от -0.5 до +0.5)
             for (let i = 1; i <= segY; i++) {
-                const v = -halfH + (i / segY) * (2 * halfH);
-                vertices.push(this.getRetardedPoint(shape, halfW, v, tCurr, obs, c, stateInstant));
+                const normV = -0.5 + (i / segY);
+                vertices.push(this.getRetardedPoint(shape, 0.5, normV, tCurr, obs, c, stateInstant));
             }
-            // Нижняя грань: справа налево (v = +halfH, u от +halfW до -halfW)
+            // Нижняя грань: справа налево (normV = +0.5, normU от +0.5 до -0.5)
             for (let i = 1; i <= segX; i++) {
-                const u = halfW - (i / segX) * (2 * halfW);
-                vertices.push(this.getRetardedPoint(shape, u, halfH, tCurr, obs, c, stateInstant));
+                const normU = 0.5 - (i / segX);
+                vertices.push(this.getRetardedPoint(shape, normU, 0.5, tCurr, obs, c, stateInstant));
             }
-            // Левая грань: снизу вверх (u = -halfW, v от +halfH до -halfH)
+            // Левая грань: снизу вверх (normU = -0.5, normV от +0.5 до -0.5)
             for (let i = 1; i < segY; i++) {
-                const v = halfH - (i / segY) * (2 * halfH);
-                vertices.push(this.getRetardedPoint(shape, -halfW, v, tCurr, obs, c, stateInstant));
+                const normV = 0.5 - (i / segY);
+                vertices.push(this.getRetardedPoint(shape, -0.5, normV, tCurr, obs, c, stateInstant));
             }
         }
 
         if (vertices.length === 0) return;
 
         // Проверяем, есть ли точки внутри причинного светового горизонта
-        const visibleVertices = vertices.filter(v => v.tEmit >= 0);
+        const visibleVertices = vertices.filter(v => v.isInsideHorizon);
         const hasVisible = visibleVertices.length > 0;
 
         // Измерение наблюдаемой длины стержня (для HUD)
@@ -471,17 +493,16 @@ export class View2D {
 
         // 3. Если это сарай, отрисовываем двери в их ретардированном состоянии
         if (shape.type === 'barn') {
-            const halfW = stateInstant.width / 2;
-            const ptLeft = this.getRetardedPoint(shape, -halfW, 0, tCurr, obs, c, stateInstant);
-            const ptRight = this.getRetardedPoint(shape, halfW, 0, tCurr, obs, c, stateInstant);
+            const ptLeft = this.getRetardedPoint(shape, -0.5, 0, tCurr, obs, c, stateInstant);
+            const ptRight = this.getRetardedPoint(shape, 0.5, 0, tCurr, obs, c, stateInstant);
             const sLeft = this.worldToScreen(ptLeft.worldX, ptLeft.worldY);
             const sRight = this.worldToScreen(ptRight.worldX, ptRight.worldY);
             const doorH = stateInstant.height * this.scale;
 
-            if (ptLeft.tEmit >= 0) {
+            if (ptLeft.isInsideHorizon) {
                 this.drawBarnDoorAt(ctx, sLeft.x, sLeft.y, doorH, ptLeft.doorsOpen);
             }
-            if (ptRight.tEmit >= 0) {
+            if (ptRight.isInsideHorizon) {
                 this.drawBarnDoorAt(ctx, sRight.x, sRight.y, doorH, ptRight.doorsOpen);
             }
         }

@@ -122,6 +122,7 @@ export class LorentzDiagram {
 
     bindEvents() {
         // Реакция на события приложения
+        this.state.on('timeUpdated', () => this.render());
         this.state.on('shapesUpdated', () => this.render());
         this.state.on('shapeSelected', () => this.render());
         this.state.on('settingsChanged', () => this.render());
@@ -202,7 +203,13 @@ export class LorentzDiagram {
         ctx.clearRect(0, 0, w, h);
 
         const shape = this.state.getSelectedShape() || this.state.shapes[0];
-        const beta = shape ? (shape.betaX ?? 0) : 0.75;
+        let beta = shape ? (shape.betaX ?? 0) : 0.75;
+        if (shape) {
+            const instState = shape.getStateAt(this.state.currentTime, this.state.speedOfLight);
+            if (this.state.currentTime > 0 && instState && instState.betaX !== undefined) {
+                beta = instState.betaX;
+            }
+        }
         const absBeta = Math.min(0.999, Math.abs(beta));
         const sign = beta >= 0 ? 1 : -1;
 

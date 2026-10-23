@@ -480,6 +480,10 @@ export class ViewEditor {
                 <label>Скорость βᵧ (vᵧ/c):</label>
                 <input type="number" id="popup-shape-betay" step="0.05" min="-0.99" max="0.99" value="${shape.betaY ?? 0}">
             </div>
+            <div class="popup-row">
+                <label>Разгон t_acc (с):</label>
+                <input type="number" id="popup-shape-accel" step="0.1" min="0" max="5.0" value="${shape.accelTime ?? ShapeModel.accelDuration ?? 0.8}">
+            </div>
             <button id="popup-btn-key" class="btn btn-xs btn-primary btn-block mt-2">
                 ◆ Зафиксировать цвет в ключе (t = ${this.state.currentTime.toFixed(2)}s)
             </button>
@@ -542,6 +546,18 @@ export class ViewEditor {
                 this.render();
             }
         });
+
+        const inputAccel = popup.querySelector('#popup-shape-accel');
+        if (inputAccel) {
+            inputAccel.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val) && val >= 0) {
+                    shape.accelTime = val;
+                    this.state.emit('shapesUpdated', this.state.shapes);
+                    this.render();
+                }
+            });
+        }
 
         popup.querySelector('#popup-btn-key').addEventListener('click', () => {
             shape.setKeyframe(this.state.currentTime, {
